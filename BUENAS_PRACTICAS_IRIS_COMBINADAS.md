@@ -184,3 +184,281 @@ proyecto-iris/
 - Boolean: Usar `Is` o `Has` como prefijo → `IsValid`, `HasHeader`
 
 ---
+
+## 2. Gestión de Código Fuente
+
+### 2.1 Flujo de Trabajo Recomendado
+
+#### ✅ OPCIÓN A: Desarrollo en IDE → Load → Compile (RECOMENDADO)
+
+```bash
+# 1. Editar archivos .cls en tu IDE favorito (VS Code)
+# 2. Copiar archivos al contenedor (si no hay volumen compartido)
+docker cp iris/src/demo/prod/MiClase.cls iris102:/opt/irisapp/iris/src/demo/prod/
+
+# 3. Conectarse a IRIS
+docker exec -it iris102 iris session IRIS -U DEMO
+
+# 4. Cargar y compilar desde terminal IRIS
+Do $system.OBJ.Load("/opt/irisapp/iris/src/demo/prod/MiClase.cls", "ck")
+
+# 5. O compilar paquete completo
+Do $system.OBJ.CompilePackage("Demo", "ckr")
+```
+
+#### ✅ OPCIÓN B: Usar Volúmenes Docker (MÁS SIMPLE)
+
+```yaml
+# En docker-compose.yml
+services:
+  iris:
+    volumes:
+      - ./iris/src:/opt/irisapp/iris/src:ro  # Read-only para seguridad
+```
+
+**Ventajas:**
+- Cambios en archivos locales se reflejan inmediatamente en contenedor
+- No necesitas copiar archivos manualmente
+- Facilita el desarrollo iterativo
+
+### 2.2 Comandos de Compilación
+
+```objectscript
+// Compilar una sola clase
+Do $system.OBJ.Compile("Demo.MiClase", "ck")
+
+// Compilar con recompilación de dependencias
+Do $system.OBJ.Compile("Demo.MiClase", "ckr")
+
+// Compilar paquete completo
+Do $system.OBJ.CompilePackage("Demo", "ckr")
+
+// Cargar desde archivo
+Do $system.OBJ.Load("/path/to/file.cls", "ck")
+
+// Verificar errores de compilación
+Write $System.Status.GetErrorText($system.OBJ.Compile("Demo.MiClase", "ck"))
+```
+
+**Flags importantes:**
+- `c` = Compile
+- `k` = Keep source code loaded
+- `r` = Recursive (recompilar dependencias)
+- `d` = Display errors
+- `u` = Update (no recompilar si no hay cambios)
+
+### 2.3 ⚠️ Evitar Heredocs Complejos en Terminal
+
+**❌ NO FUNCIONA BIEN:**
+```bash
+# Heredocs con ObjectScript pueden fallar
+docker exec iris102 iris session IRIS -U DEMO << 'EOF'
+Do $system.OBJ.Compile("Demo.Class", "ck")
+Halt
+EOF
+```
+
+**✅ USAR ALTERNATIVAS:**
+```bash
+# Opción 1: Echo con pipe
+docker exec iris102 bash -c "echo 'Do \$system.OBJ.Compile(\"Demo.Class\", \"ck\")' | iris session IRIS -U DEMO"
+
+# Opción 2: Crear script temporal
+echo 'Do $system.OBJ.CompilePackage("Demo", "ckr")' > /tmp/compile.txt
+docker cp /tmp/compile.txt iris102:/tmp/
+docker exec iris102 bash -c "cat /tmp/compile.txt | iris session IRIS -U DEMO"
+
+# Opción 3: Script .sh con comandos individuales
+docker exec iris102 iris session IRIS -U DEMO "Do \$system.OBJ.CompilePackage(\"Demo\", \"ckr\")"
+```
+
+---
+
+## 3. Compilación y Despliegue
+
+### 3.1 Secuencia de Inicio de Production
+
+```objectscript
+// 1. Habilitar Interoperability en namespace (solo primera vez)
+Do ##class(%EnsembleMgr).EnableNamespace("DEMO", 1)
+
+// 2. Compilar todas las clases
+Do $system.OBJ.CompilePackage("Demo", "ckr")
+
+// 3. Iniciar Production
+Do ##class(Ens.Director).StartProduction("Demo.Production")
+
+// 4. Verificar estado
+Write ##class(Ens.Director).IsProductionRunning()
+
+// 5. Actualizar Production (después de cambios en XData)
+Do ##class(Ens.Director).UpdateProduction()
+
+// 6. Detener Production
+Do ##class(Ens.Director).StopProduction()
+```
+
+### 3.2 Gestión de Credenciales
+
+```objectscript
+// Crear credenciales
+Do ##class(Ens.Config.Credentials).SetCredential("MySQL-Demo-Credentials", "demo", "demo_pass", 1)
+
+// Verificar credenciales
+Set creds = ##class(Ens.Config.Credentials).%OpenId("MySQL-Demo-Credentials")
+Write creds.Username
+
+// Nota: El password no es recuperable directamente (encriptado)
+```
+
+### 3.3 Actualizar Configuración de Production
+
+**Después de modificar XData en Production.cls:**
+
+1. Compilar la clase
+2. **Ejecutar UpdateProduction()** - ¡CRÍTICO!
+3. Verificar en Portal que los cambios se aplicaron
+
+```objectscript
+// Secuencia completa
+Do $system.OBJ.Compile("Demo.Production", "ck")
+Do ##class(Ens.Director).UpdateProduction()
+```
+
+**⚠️ IMPORTANTE:** UpdateProduction() NO reinicia componentes automáticamente. Si cambias Settings críticos, es mejor Stop → Start.
+
+---
+
+## 4. Conectividad de Bases de Datos
+
+### 4.1 ODBC vs JDBC vs SQL Gateway
+
+#### 🔍 Conceptos Importantes (LECCIÓN CLAVE)
+
+| Tecnología | Propósito | Cuándo Usar |
+|------------|-----------|-------------|
+| **ODBC DSN** | Conectar IRIS a bases de datos externas vía ODBC | SQL queries desde Business Operations |
+| **JDBC** | Conectar IRIS a bases de datos externas vía Java | Cuando ODBC no está disponible o prefieres Java |
+| **SQL Gateway Connections** | Configurar conexiones SQL persistentes | Queries complejos, múltiples tablas, joins |
+| **External Language Servers** | Ejecutar código Java/.NET desde ObjectScript | Integración con librerías externas, NO para SQL |
+
+**⚠️ ERROR COMÚN:** 
+`Config.Gateways` crea **External Language Servers** (Java/.NET), NO conexiones SQL Gateway. Para SQL, usar ODBC DSN o crear SQL Gateway Connections desde Portal.
+
+### 4.2 Configuración ODBC en Docker
+
+**Archivo `/etc/odbc.ini`:**
+```ini
+[MySQL-Demo]
+Driver=MariaDB ODBC 3.1 Driver
+Server=mysql                    # Nombre del servicio en docker-compose
+Port=3306
+Database=demo
+USER=demo
+PASSWORD=demo_pass
+Option=3
+
+[PostgreSQL-Demo]
+Driver=PostgreSQL Unicode
+Servername=postgres             # Nombre del servicio en docker-compose
+Port=5432
+Database=demo
+UserName=demo
+Password=demo_pass
+SSLmode=disable
+```
+
+**Archivo `/etc/odbcinst.ini`:**
+```ini
+[MariaDB ODBC 3.1 Driver]
+Description=MariaDB Connector/ODBC v.3.1
+Driver=/usr/lib/libmaodbc.so    # ARM64: /usr/lib/, x86: /usr/lib64/
+
+[PostgreSQL Unicode]
+Description=PostgreSQL ODBC driver (Unicode version)
+Driver=/usr/lib/psqlodbcw.so
+```
+
+### 4.3 Verificación de Conectividad ODBC
+
+```bash
+# 1. Verificar drivers instalados
+docker exec iris102 odbcinst -q -d
+
+# 2. Verificar DSN configurados
+docker exec iris102 odbcinst -q -s
+
+# 3. Test de conexión con isql
+docker exec iris102 isql MySQL-Demo demo demo_pass -v
+docker exec iris102 isql PostgreSQL-Demo demo demo_pass -v
+
+# 4. Query de prueba
+docker exec iris102 isql MySQL-Demo demo demo_pass -v -c "SELECT 1;"
+```
+
+### 4.4 Uso de EnsLib.SQL.OutboundAdapter
+
+```objectscript
+Class Demo.MySQL.Operation Extends Ens.BusinessOperation
+{
+    Parameter ADAPTER = "EnsLib.SQL.OutboundAdapter";
+    
+    Property Adapter As EnsLib.SQL.OutboundAdapter;
+    
+    Method OnMessage(pRequest As Demo.Msg.DatabaseInsertRequest, 
+                     Output pResponse As Demo.Msg.DatabaseInsertResponse) As %Status
+    {
+        // Crear statement
+        Set stmt = ..Adapter.CreateStatement()
+        
+        // Preparar SQL con parámetros
+        Set sql = "INSERT INTO csv_records (csv_id, name, age, city) VALUES (?, ?, ?, ?)"
+        Set status = stmt.%Execute(csvId, name, age, city)
+        
+        // Verificar resultado
+        If $$$ISERR(status) {
+            // Manejar error
+        }
+        
+        Return $$$OK
+    }
+}
+```
+
+**Settings en Production.cls:**
+```xml
+<Item Name="MySQLOperation" ClassName="Demo.MySQL.Operation">
+    <Setting Target="Adapter" Name="DSN">MySQL-Demo</Setting>
+    <Setting Target="Adapter" Name="Credentials">MySQL-Demo-Credentials</Setting>
+</Item>
+```
+
+---
+... (continúa con el resto del contenido completo de @BUENAS_PRACTICAS_IRIS.md)
+```
+### B) Contenido completo de @objectscript-cheat-sheet.md (insertado)
+```markdown
+# objectscript-cheat-sheet
+
+ObjectScript Quick Reference
+
+## Basics / SQL
+Description | Command 
+---------|----------
+Call a class method|do ##class(package.class).method(arguments)
+||set variable = ##class(package.class).method(arguments)
+||_**Note**: place a . before each pass-by-reference argument_
+Call an instance method|do object.method(arguments)
+||set variable = object.method(arguments)
+||_**Note**: place a . before each pass-by-reference argument_
+Create a new object|set object = ##class(package.class).%New()
+Open an existing object by ID|set object = ##class(package.class).%OpenId(id, concurrency, .status)
+Open an existing object by unique index value|set object = ##class(package.class).IndexNameOpen(value, concurrency, .status)
+Close an object (remove from process)|set object = ""
+Write or set a property|write object.property
+||set object.property = value
+Write a class parameter|write ..#PARAMETER
+||write ##class(package.class).#PARAMETER
+...
+(cheat-sheet completo insertado)
+```
