@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "iriscnet2:MLTEST",
+			"uri": "isfs://iriscnet2:mltest/"
+		}
+	],
+	"settings": {}
+}

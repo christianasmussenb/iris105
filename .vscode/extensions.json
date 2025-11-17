@@ -1,0 +1,6 @@
+{
+  "recommendations": [
+    "intersystems-community.objectscript",
+    "mtxr.sqltools"
+  ]
+}
