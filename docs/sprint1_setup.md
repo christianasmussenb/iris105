@@ -60,6 +60,24 @@ Do ##class(IRIS105.Util.MockData).Generate($$$NULL)
 - No versionar datos ni bases en Git.
 - Ejecutar `Do ##class(Ens.Director).UpdateProduction()` si cambia XData en una Production.
 
+**Referencia de buenas prácticas**
+
+Este repositorio incluye una guía consolidada de buenas prácticas para proyectos InterSystems IRIS: `BUENAS_PRACTICAS_IRIS_COMBINADAS.md` en la raíz del proyecto. Contiene:
+
+- Convenciones de estructura de repositorio y nombres de clases.
+- Flujo recomendado para compilación y despliegue (volúmenes Docker, `Do $system.OBJ.CompilePackage(...)`).
+- Comandos útiles para desarrollo local, debugging y testing.
+
+Sugerencia rápida: antes de ejecutar cargas masivas, compilar el paquete y hacer una corrida de prueba con pocos registros:
+
+```bash
+# Compilar paquete (desde host con iris CLI o dentro del contenedor)
+iris session IRIS -U %SYS "Do $system.OBJ.CompilePackage(""IRIS105"",""ckr"")"
+
+# Ejecutar generador en namespace MLTEST
+iris session IRIS -U MLTEST "Do ##class(IRIS105.Util.MockData).Generate()"
+```
+
 8) Verificación rápida
 
 - Desde SQL: `SELECT * FROM INFORMATION_SCHEMA.ML_MODELS;`

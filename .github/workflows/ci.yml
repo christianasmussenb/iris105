@@ -1,0 +1,44 @@
+name: CI - IRIS Package
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+
+      - name: Start IRIS container
+        run: |
+          docker run -d --name iris-ci -p 52773:52773 -v ${GITHUB_WORKSPACE}/src:/opt/irisapp/iris/src:ro intersystems/iris:2024.1.0.231.0 --key=dev
+
+      - name: Wait for IRIS
+        run: |
+          # adapt wait/check logic as needed in your environment
+          sleep 20
+
+      - name: Compile IRIS105 package
+        run: |
+          docker exec iris-ci iris session IRIS -U %SYS "Do $system.OBJ.CompilePackage(\"IRIS105\",\"ckr\")"
+
+      - name: Run basic verification (list compiled classes)
+        run: |
+          docker exec iris-ci iris session IRIS -U %SYS "Write $System.Status.GetErrorText($system.OBJ.CompilePackage(\"IRIS105\",\"ckr\")),!" || true
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker rm -f iris-ci || true
+
+# Notes:
+# - This is a minimal CI example. For production CI, prefer a specific IRIS image, secrets management,
+#   and more robust health checks. Consider using an official testing image or pre-built dev image.
+# - If you use ZPM packaging, change compile step to use ZPM to install your package into the container.

@@ -8,5 +8,11 @@
 			"uri": "isfs://iriscnet2:mltest/"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"objectscript.conn": {
+			"server": "iriscnet2",
+			"ns": "MLTEST",
+			"active": true
+		}
+	}
 }

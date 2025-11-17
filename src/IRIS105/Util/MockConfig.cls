@@ -1,14 +1,20 @@
 Class IRIS105.Util.MockConfig Extends %RegisteredObject
 {
-}    {
-        Set cfg = {
-            "horizonMonths": 3,
-            "occupancyPct": 0.85,
-            "physicians": 8,
-            "boxes": 3,
-            "specialties": 3,
-            "payerMix": {"FONASA": 0.8, "ISAPRE": 0.2}
-        }
-        Quit cfg
-    }
+
+/// Retorna la configuración por defecto para la generación de datos mock
+ClassMethod GetDefault() As %DynamicObject
+{
+            Set cfg = ##class(%DynamicObject).%New()
+            Set cfg.horizonMonths = 3
+            Set cfg.occupancyPct = 0.85
+            Set cfg.physicians = 8
+            Set cfg.boxes = 3
+            Set cfg.specialties = 3
+            Set payer = ##class(%DynamicObject).%New()
+            Set payer.FONASA = 0.8
+            Set payer.ISAPRE = 0.2
+            Set cfg.payerMix = payer
+            Quit cfg
+}
+
 }
