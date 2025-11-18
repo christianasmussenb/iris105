@@ -14,6 +14,22 @@
 			"ns": "MLTEST",
 			"active": true
 		},
-		"chatgpt.openOnStartup": true
+		"chatgpt.openOnStartup": true,
+		"sqltools.connections": [
+			{
+				"namespace": "MLTEST",
+				"connectionMethod": "Server and Port",
+				"showSystem": false,
+				"previewLimit": 50,
+				"server": "iriscnet",
+				"port": 80,
+				"https": false,
+				"askForPassword": false,
+				"driver": "InterSystems IRIS",
+				"name": "iriscnet-sql",
+				"username": "superuser",
+				"password": "Compunet123."
+			}
+		]
 	}
 }
