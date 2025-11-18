@@ -1,28 +1,29 @@
 Class IRIS105.Util.MockPayers Extends %RegisteredObject
 {
 
-ClassMethod Create() As %Status
+ClassMethod Create() As %Status [ ProcedureBlock = 1 ]
 {
-    TRY {
+    Set tSC = $$$OK
+    Try {
         Set defaults = "PAYER-1|Fonasa|FONASA,PAYER-2|Colmena|ISAPRE,PAYER-3|Consalud|ISAPRE,PAYER-4|Banmedica|ISAPRE"
+        Set entryCount = $Length(defaults,",") + 1
         
-        For idx=1:1 {
+        For idx=1:1:entryCount {
             Set entry = $Piece(defaults,",",idx)
             Quit:entry=""
             
-            Set payerId = $Piece(entry,"|",1)
-            Set payer = ##class(IRIS105.Payer).%New()
-            Set payer.PayerId = payerId
-            Set payer.Name = $Piece(entry,"|",2)
-            Set payer.Type = $Piece(entry,"|",3)
+            Set tPayer = ##class(IRIS105.Payer).%New()
+            Set tPayer.PayerId = $Piece(entry,"|",1)
+            Set tPayer.Name = $Piece(entry,"|",2)
+            Set tPayer.Type = $Piece(entry,"|",3)
             
-            $$$ThrowOnError(payer.%Save())
+            Set tSC = tPayer.%Save()
+            Quit:$$$ISERR(tSC)
         }
-Quit $$$OK
+    } Catch ex {
+        Set tSC = ex.AsStatus()
     }
-CATCH ex {
-        Quit ex.AsStatus()
-    }
+    Quit tSC
 }
 
 }

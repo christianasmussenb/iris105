@@ -1,22 +1,23 @@
 Class IRIS105.Util.MockBoxes Extends %RegisteredObject
 {
 
-ClassMethod Create(count As %Integer = 3) As %Status
+ClassMethod Create(count As %Integer = 3) As %Status [ ProcedureBlock = 1 ]
 {
-    TRY {
+    Set tSC = $$$OK
+    Try {
         For idx=1:1:count {
-            Set box = ##class(IRIS105.Box).%New()
-            Set box.BoxId = "BOX-"_idx
-            Set box.Name = "BOX-"_idx
-            Set box.Location = "Sede 1"
+            Set tBox = ##class(IRIS105.Box).%New()
+            Set tBox.BoxId = "BOX-"_idx
+            Set tBox.Name = "BOX-"_idx
+            Set tBox.Location = "Sede 1"
             
-            $$$ThrowOnError(box.%Save())
+            Set tSC = tBox.%Save()
+            Quit:$$$ISERR(tSC)
         }
-Quit $$$OK
+    } Catch ex {
+        Set tSC = ex.AsStatus()
     }
-CATCH ex {
-        Quit ex.AsStatus()
-    }
+    Quit tSC
 }
 
 }

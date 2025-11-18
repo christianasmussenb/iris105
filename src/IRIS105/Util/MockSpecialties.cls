@@ -1,27 +1,28 @@
 Class IRIS105.Util.MockSpecialties Extends %RegisteredObject
 {
 
-ClassMethod Create(count As %Integer = 3) As %Status
+ClassMethod Create(count As %Integer = 3) As %Status [ ProcedureBlock = 1 ]
 {
-    TRY {
+    Set tSC = $$$OK
+    Try {
         Set defaults = "Medicina Interna,Traumatologia,Pediatria"
-        Set entryCount = $Length(defaults,",")
+        Set entryCount = $Length(defaults,",") + 1
         
         For idx=1:1:count {
             Set nameIndex = ((idx-1) # entryCount) + 1
             Set name = $Piece(defaults,",",nameIndex)
             
-            Set specialty = ##class(IRIS105.Specialty).%New()
-            Set specialty.SpecialtyId = "SPEC-"_idx
-            Set specialty.Name = name
+            Set tSpecialty = ##class(IRIS105.Specialty).%New()
+            Set tSpecialty.SpecialtyId = "SPEC-"_idx
+            Set tSpecialty.Name = name
             
-            $$$ThrowOnError(specialty.%Save())
+            Set tSC = tSpecialty.%Save()
+            Quit:$$$ISERR(tSC)
         }
-Quit $$$OK
+    } Catch ex {
+        Set tSC = ex.AsStatus()
     }
-CATCH ex {
-        Quit ex.AsStatus()
-    }
+    Quit tSC
 }
 
 }

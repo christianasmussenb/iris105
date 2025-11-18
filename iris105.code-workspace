@@ -13,6 +13,7 @@
 			"server": "iriscnet2",
 			"ns": "MLTEST",
 			"active": true
-		}
+		},
+		"chatgpt.openOnStartup": true
 	}
 }
