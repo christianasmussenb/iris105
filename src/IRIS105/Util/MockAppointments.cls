@@ -5,29 +5,29 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
 {
     Set tSC = $$$OK
     Try {
-        Set occupancy = $Get(params.occupancyPct,0.85)
-        Set nPhysicians = $Get(params.physicians,8)
-        Set nBoxes = $Get(params.boxes,3)
-        Set nSpecialties = $Get(params.specialties,3)
-        Set slotsPerDay = $Get(params.slotsPerDay,8)
-        Set totalDays = $Get(params.totalDays,90)
-        Set nPatients = $Get(params.patients,100)
+        Set occupancy = $Select(params.%IsDefined("occupancyPct"):params.%Get("occupancyPct"),1:0.85)
+        Set nPhysicians = $Select(params.%IsDefined("physicians"):params.%Get("physicians"),1:8)
+        Set nBoxes = $Select(params.%IsDefined("boxes"):params.%Get("boxes"),1:3)
+        Set nSpecialties = $Select(params.%IsDefined("specialties"):params.%Get("specialties"),1:3)
+        Set slotsPerDay = $Select(params.%IsDefined("slotsPerDay"):params.%Get("slotsPerDay"),1:8)
+        Set totalDays = $Select(params.%IsDefined("totalDays"):params.%Get("totalDays"),1:90)
+        Set nPatients = $Select(params.%IsDefined("patients"):params.%Get("patients"),1:100)
         
         If nPhysicians<1 {
             Set tSC = $$$ERROR($$$GeneralError,"At least one physician is required")
-            Quit tSC
+            Quit:$$$ISERR(tSC)
         }
         If slotsPerDay<1 {
             Set tSC = $$$ERROR($$$GeneralError,"Slots per day must be positive")
-            Quit tSC
+            Quit:$$$ISERR(tSC)
         }
         If totalDays<1 {
             Set tSC = $$$ERROR($$$GeneralError,"Total days must be positive")
-            Quit tSC
+            Quit:$$$ISERR(tSC)
         }
         If nPatients<1 {
             Set tSC = $$$ERROR($$$GeneralError,"At least one patient is required")
-            Quit tSC
+            Quit:$$$ISERR(tSC)
         }
         If nBoxes<1 Set nBoxes = 1
         If nSpecialties<1 Set nSpecialties = 1
@@ -69,6 +69,10 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
                 Quit:$$$ISERR(tSC)
             }
             Quit:$$$ISERR(tSC)
+        }
+        
+        If '$SYSTEM.Status.IsError(tSC) {
+            Write !,"[MockAppointments] Generadas ",(apptCounter-1)," citas"
         }
     } Catch ex {
         Set tSC = ex.AsStatus()

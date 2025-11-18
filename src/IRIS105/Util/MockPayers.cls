@@ -7,6 +7,7 @@ ClassMethod Create() As %Status [ ProcedureBlock = 1 ]
     Try {
         Set defaults = "PAYER-1|Fonasa|FONASA,PAYER-2|Colmena|ISAPRE,PAYER-3|Consalud|ISAPRE,PAYER-4|Banmedica|ISAPRE"
         Set entryCount = $Length(defaults,",") + 1
+        Set created = 0
         
         For idx=1:1:entryCount {
             Set entry = $Piece(defaults,",",idx)
@@ -19,6 +20,10 @@ ClassMethod Create() As %Status [ ProcedureBlock = 1 ]
             
             Set tSC = tPayer.%Save()
             Quit:$$$ISERR(tSC)
+            Set created = created + 1
+        }
+        If '$SYSTEM.Status.IsError(tSC) {
+            Write !,"[MockPayers] Generados ",created," pagadores"
         }
     } Catch ex {
         Set tSC = ex.AsStatus()

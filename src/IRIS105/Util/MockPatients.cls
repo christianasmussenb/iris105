@@ -7,6 +7,7 @@ ClassMethod Create(count As %Integer = 100) As %Status [ ProcedureBlock = 1 ]
     Try {
         Set payerChoices = "PAYER-1,PAYER-2,PAYER-3,PAYER-4"
         Set payerCount = $Length(payerChoices,",") + 1
+        Set created = 0
         
         For idx=1:1:count {
             Set tPatient = ##class(IRIS105.Patient).%New()
@@ -23,6 +24,10 @@ ClassMethod Create(count As %Integer = 100) As %Status [ ProcedureBlock = 1 ]
             
             Set tSC = tPatient.%Save()
             Quit:$$$ISERR(tSC)
+            Set created = created + 1
+        }
+        If '$SYSTEM.Status.IsError(tSC) {
+            Write !,"[MockPatients] Generados ",created," pacientes"
         }
     } Catch ex {
         Set tSC = ex.AsStatus()

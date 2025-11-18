@@ -7,6 +7,7 @@ ClassMethod Create(count As %Integer = 3) As %Status [ ProcedureBlock = 1 ]
     Try {
         Set defaults = "Medicina Interna,Traumatologia,Pediatria"
         Set entryCount = $Length(defaults,",") + 1
+        Set created = 0
         
         For idx=1:1:count {
             Set nameIndex = ((idx-1) # entryCount) + 1
@@ -18,7 +19,9 @@ ClassMethod Create(count As %Integer = 3) As %Status [ ProcedureBlock = 1 ]
             
             Set tSC = tSpecialty.%Save()
             Quit:$$$ISERR(tSC)
+            Set created = created + 1
         }
+        If '$SYSTEM.Status.IsError(tSC) Write !,"[MockSpecialties] Generadas ",created," especialidades"
     } Catch ex {
         Set tSC = ex.AsStatus()
     }
