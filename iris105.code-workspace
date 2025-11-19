@@ -6,13 +6,17 @@
 		{
 			"name": "iriscnet2:MLTEST",
 			"uri": "isfs://iriscnet2:mltest/"
+		},
+		{
+			"name": "localhost:MLTEST",
+			"uri": "isfs://localhost:mltest/"
 		}
 	],
 	"settings": {
 		"objectscript.conn": {
 			"server": "iriscnet2",
 			"ns": "MLTEST",
-			"active": true
+			"active": false
 		},
 		"chatgpt.openOnStartup": true,
 		"sqltools.connections": [
@@ -29,6 +33,20 @@
 				"name": "iriscnet-sql",
 				"username": "superuser",
 				"password": "Compunet123."
+			},
+			{
+				"namespace": "MLTEST",
+				"connectionMethod": "Server and Port",
+				"showSystem": false,
+				"previewLimit": 50,
+				"server": "localhost",
+				"port": 52773,
+				"https": false,
+				"askForPassword": false,
+				"driver": "InterSystems IRIS",
+				"name": "localhost-sql",
+				"username": "superuser",
+				"password": "123"
 			}
 		]
 	}
