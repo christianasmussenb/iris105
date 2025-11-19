@@ -10,6 +10,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 <Routes>
     <Route Url="/api/ml/noshow/score" Method="POST" Call="Score"/>
     <Route Url="/api/ml/stats/summary" Method="GET" Call="StatsSummary"/>
+    <Route Url="/api/ml/stats/model" Method="GET" Call="ModelDetails"/>
     <Route Url="/api/ml/mock/generate" Method="POST" Call="GenerateMock"/>
     <Route Url="/api/ml/stats/lastAppointmentByPatient" Method="GET" Call="LastAppointmentByPatient"/>
 </Routes>
@@ -50,6 +51,47 @@ ClassMethod Score() As %Status [ ProcedureBlock = 1 ]
         Quit:$$$ISERR(tSC)
         
         Do ..%SendJSON(result)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Devuelve detalles del modelo y sus runs (MODELS, TRAINED_MODELS, TRAINING_RUNS, VALIDATION_RUNS, VALIDATION_METRICS)
+ClassMethod ModelDetails() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set model = ..#DefaultModelName
+        If %request.Get("modelName")'="" {
+            Set model = %request.Get("modelName")
+        }
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("modelName", model)
+        Do resp.%Set("models", ..%SelectToArray(
+            "SELECT MODEL_NAME, DESCRIPTION, PREDICTING, PREDICTING_TYPE, FEATURE_LIST, CREATED_AT, DEFAULT_TRAINED_MODEL_NAME, DEFAULT_TRAINED_MODEL_ALGORITHM, MODEL_SQL FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?",
+            "modelName,description,predicting,predictingType,featureList,createdAt,defaultTrainedModelName,defaultTrainedModelAlgorithm,modelSQL",
+            model))
+        Do resp.%Set("trainedModels", ..%SelectToArray(
+            "SELECT MODEL_INFO, MODEL_NAME, MODEL_TYPE, PROVIDER, TRAINED_MODEL_NAME, TRAINED_TIMESTAMP FROM INFORMATION_SCHEMA.ML_TRAINED_MODELS WHERE MODEL_NAME=?",
+            "modelInfo,modelName,modelType,provider,trainedModelName,trainedTimestamp",
+            model))
+        Do resp.%Set("trainingRuns", ..%SelectToArray(
+            "SELECT COMPLETED_TIMESTAMP, LOG, ML_CONFIGURATION_NAME, MODEL_NAME, PROVIDER, RUN_STATUS, SETTINGS, START_TIMESTAMP, STATUS_CODE, TRAINING_DURATION, TRAINING_RUN_NAME, TRAINING_RUN_QUERY FROM INFORMATION_SCHEMA.ML_TRAINING_RUNS WHERE MODEL_NAME=?",
+            "completedTimestamp,log,mlConfigurationName,modelName,provider,runStatus,settings,startTimestamp,statusCode,trainingDuration,trainingRunName,trainingRunQuery",
+            model))
+        Do resp.%Set("validationRuns", ..%SelectToArray(
+            "SELECT COMPLETED_TIMESTAMP, LOG, MODEL_NAME, RUN_STATUS, SETTINGS, START_TIMESTAMP, STATUS_CODE, TRAINED_MODEL_NAME, VALIDATION_DURATION, VALIDATION_RUN_NAME, VALIDATION_RUN_QUERY FROM INFORMATION_SCHEMA.ML_VALIDATION_RUNS WHERE MODEL_NAME=?",
+            "completedTimestamp,log,modelName,runStatus,settings,startTimestamp,statusCode,trainedModelName,validationDuration,validationRunName,validationRunQuery",
+            model))
+        Do resp.%Set("validationMetrics", ..%SelectToArray(
+            "SELECT METRIC_NAME, METRIC_VALUE, MODEL_NAME, TARGET_VALUE, TRAINED_MODEL_NAME, VALIDATION_RUN_NAME FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME=?",
+            "metricName,metricValue,modelName,targetValue,trainedModelName,validationRunName",
+            model))
+        Do ..%SendJSON(resp)
     } Catch ex {
         Set tSC = ex.AsStatus()
     }
@@ -154,13 +196,19 @@ ClassMethod %FillCounts(ByRef pObj As %DynamicObject)
     Set q = "SELECT (SELECT COUNT(*) FROM IRIS105.Patient) AS Patients,"_ 
             " (SELECT COUNT(*) FROM IRIS105.Appointment) AS Appointments,"_
             " (SELECT COUNT(*) FROM IRIS105.AppointmentRisk) AS Scored,"_
-            " (SELECT COALESCE(AVG(NoShow),0) FROM IRIS105.Appointment) AS NoShowRate"
+            " (SELECT COALESCE(AVG(NoShow),0) FROM IRIS105.Appointment) AS NoShowRate,"_
+            " (SELECT COUNT(*) FROM IRIS105.Box) AS Boxes,"_
+            " (SELECT COUNT(*) FROM IRIS105.Physician) AS Physicians,"_
+            " (SELECT COUNT(*) FROM IRIS105.Specialty) AS Specialties"
     Set rs = ##class(%SQL.Statement).%ExecDirect(,q)
     If rs.%Next() {
         Do pObj.%Set("patients", rs.Patients)
         Do pObj.%Set("appointments", rs.Appointments)
         Do pObj.%Set("scoredAppointments", rs.Scored)
         Do pObj.%Set("noShowRate", rs.NoShowRate)
+        Do pObj.%Set("boxes", rs.Boxes)
+        Do pObj.%Set("physicians", rs.Physicians)
+        Do pObj.%Set("specialties", rs.Specialties)
     }
 }
 
@@ -173,9 +221,34 @@ ClassMethod %FillModelInfo(ByRef pObj As %DynamicObject)
     Set rs = stmt.%Execute(..#DefaultModelName)
     If rs.%Next() {
         Do pObj.%Set("model", ..#DefaultModelName)
-        Do pObj.%Set("defaultTrainedModel", rs.DEFAULT_TRAINED_MODEL_NAME)
-        Do pObj.%Set("modelStatus", rs.STATUS)
+        Do pObj.%Set("defaultTrainedModel", rs.%Get("DEFAULT_TRAINED_MODEL_NAME"))
+        Do pObj.%Set("modelStatus", rs.%Get("STATUS"))
     }
+}
+
+ClassMethod %SelectToArray(pSQL As %String, pAliases As %String, pModel As %String = "") As %DynamicArray
+{
+    Set arr = ##class(%DynamicArray).%New()
+    Set stmt = ##class(%SQL.Statement).%New()
+    Set sc = stmt.%Prepare(pSQL)
+    If $$$ISERR(sc) Quit arr
+    If pModel'="" {
+        Set rs = stmt.%Execute(pModel)
+    } Else {
+        Set rs = stmt.%Execute()
+    }
+    If '$IsObject(rs) Quit arr
+    Set aliasCount = $L(pAliases,",")
+    While rs.%Next() {
+        Set row = ##class(%DynamicObject).%New()
+        For i=1:1:aliasCount {
+            Set alias = $Piece(pAliases,",",i)
+            If alias="" Set alias="COL"_i
+            Do row.%Set(alias, rs.%GetData(i))
+        }
+        Do arr.%Push(row)
+    }
+    Quit arr
 }
 
 ClassMethod %ReadJSONBody() As %DynamicObject [ ProcedureBlock = 1 ]
