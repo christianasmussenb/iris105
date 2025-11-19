@@ -320,6 +320,22 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
 - Página CSP liviana: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
   - Botones para stats, score por appointment, score por último paciente y generación rápida de mocks.
 
+### 7. Avance y pendientes para el siguiente sprint
+
+**Avance**:  
+- API REST funcionando (`score`, `stats/summary`, `stats/model`, `stats/lastAppointmentByPatient`, `mock/generate`).  
+- UI CSP básica para consumir endpoints y visualizar stats/modelo.  
+- Modelo `NoShowModel2` entrenado y validado; consultas de métricas operativas.
+
+**Pendientes priorizados**:  
+- Publicar/fijar `DEFAULT_TRAINED_MODEL_NAME` para `NoShowModel2` y ajustar parámetros de riesgo (umbrales rojo/amarillo/verde).  
+- Implementar scoring batch por día específico (ej. `POST /api/ml/noshow/score/batch?date=YYYY-MM-DD`) y reflejar riesgos agregados en `AppointmentRisk`.  
+- Persistir cada score en `IRIS105.AppointmentRisk` vía API/BP y exponer el conteo en `stats/summary`.  
+- Semáforo de riesgo en la UI (rojo/amarillo/verde según probabilidad configurada).  
+- Documentar los umbrales de riesgo y dejarlos parametrizables para futuras demos.  
+- Añadir ejemplos curl para batch por día y actualizar `docs/demo_script.md` tras implementar.  
+- (Opcional) Tests rápidos de los nuevos endpoints de batch y persistencia.
+
 ### 5. Mantenimiento básico
 
 - Consultas a INFORMATION_SCHEMA.ML_* para:
