@@ -34,11 +34,11 @@ USING {
 VALIDATE MODEL NoShowModel2;
 
 -- 4) Ejemplo de scoring directo en SQL con PREDICT/PROBABILITY
-SELECT AppointmentId,
+SELECT A.AppointmentId,
        PREDICT(NoShowModel2) AS PredictedLabel,
        PROBABILITY(NoShowModel2 FOR 1) AS NoShowProb
-FROM IRIS105.Appointment
-WHERE AppointmentId IN (1,2,3);
+FROM IRIS105.Appointment as A
+WHERE A.AppointmentId in ('APPT-11','APPT-22')
 
 -- 5) Métricas y runs registrados
 SELECT * FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME='NoShowModel2';
