@@ -49,13 +49,16 @@ Todo el desarrollo se realizará en:
     - `IRIS105.AppointmentRisk` (resultados de scoring).
 
 - **Capa de ML (IntegratedML + %AutoML)**
-  - Modelo `NoShowModel` definido sobre `IRIS105.Appointment`.
-  - Entrenamiento y validación con provider `%AutoML`.
+  - Modelo productivo: `NoShowModel2` definido sobre `IRIS105.Appointment`.
+  - Entrenamiento y validación con provider `%AutoML` usando comandos `TRAIN` / `VALIDATE`.
   - Monitoreo con vistas `INFORMATION_SCHEMA.ML_MODELS`, `ML_TRAINED_MODELS`, `ML_TRAINING_RUNS`, `ML_VALIDATION_RUNS`, `ML_VALIDATION_METRICS`.
 
 - **Capa de Interoperabilidad (Producción IRIS)**
-  - **Business Service REST** `IRIS105.BS.NoShowREST`  
-    - Endpoint sugerido: `/api/ml/noshow/score`.
+  - **Servicio REST** `IRIS105.REST.NoShowService`  
+    - `/api/ml/noshow/score` (usa `NoShowModel2` por defecto, `appointmentId` o `features`).
+    - `/api/ml/stats/summary` (estadísticas básicas de tablas/modelo).
+    - `/api/ml/stats/lastAppointmentByPatient` (última cita del paciente y score).
+    - `/api/ml/mock/generate` (genera datos sintéticos adicionales).
   - **Business Process** `IRIS105.BP.NoShowScoring`  
     - Llama al modelo IntegratedML vía SQL.
     - Aplica umbrales de riesgo.
@@ -211,10 +214,10 @@ Para enriquecer el modelo y la demo, se recomienda incluir:
 
 En el namespace `MLTEST`, el modelo IntegratedML se define y usa desde SQL:
 
-### 1. **Definición de modelo (ejemplo)**
+### 1. **Definición de modelo productivo (NoShowModel2)**
 
 ```sql
-CREATE MODEL NoShowModel
+CREATE MODEL NoShowModel2
 PREDICTING (NoShow)
 FROM IRIS105.Appointment
 WITH (
@@ -232,7 +235,7 @@ WITH (
 ### 2. **Entrenamiento del modelo**
 
 ```sql
-TRAIN MODEL NoShowModel
+TRAIN MODEL NoShowModel2
 USING {
   "seed": 42,
   "TrainMode": "BALANCE",
@@ -243,15 +246,79 @@ USING {
 ### 3. **Validación del modelo**
 
 ```sql
-VALIDATE MODEL NoShowModel;
+VALIDATE MODEL NoShowModel2;
 
-### 4. **Uso en predicción**
+### 4. **Uso en predicción vía IntegratedML**
 
 ```sql
 SELECT AppointmentId,
-       PREDICT(NoShowModel) AS NoShowProb
+       PREDICT(NoShowModel2) AS PredictedLabel,
+       PROBABILITY(NoShowModel2 FOR 1) AS NoShowProb
 FROM IRIS105.Appointment
 WHERE StartDateTime BETWEEN '2025-11-18' AND '2025-11-19';
+
+### 5. **Consumo vía API REST (para páginas web u otros clientes)**
+
+- Servicio: `IRIS105.REST.NoShowService`  
+- Endpoint: `POST /api/ml/noshow/score`  
+- Modelo por defecto: `NoShowModel2` (se puede especificar `trainedModelName` si se desea fijar un run concreto).
+
+**Ejemplos de request**
+
+1) Scoring de una cita ya cargada:
+
+```bash
+curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
+  -H "Content-Type: application/json" \
+  -d '{"appointmentId":123}'
+```
+
+2) Scoring con payload ad-hoc (sin persistir la cita):
+
+```bash
+curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
+  -H "Content-Type: application/json" \
+  -d '{
+        "modelName":"NoShowModel2",
+        "features":{
+          "PatientId":10,
+          "PhysicianId":3,
+          "BoxId":2,
+          "SpecialtyId":1,
+          "StartDateTime":"2025-11-18 10:30:00",
+          "BookingChannel":"WEB",
+          "BookingDaysInAdvance":5,
+          "HasSMSReminder":1,
+          "Reason":"Control post operatorio"
+        }
+      }'
+```
+
+**Ejemplo de respuesta**
+
+```json
+{
+  "appointmentId": 123,
+  "predictedLabel": 1,
+  "probability": 0.84,
+  "modelName": "NoShowModel2",
+  "trainedModelName": "",
+  "scoredAt": "2025-11-18T15:42:10"
+}
+```
+
+- `predictedLabel` proviene de `PREDICT(...)`.
+- `probability` proviene de `PROBABILITY(... FOR 1)`.
+- Estos mismos comandos SQL se usan internamente en `IRIS105.Util.NoShowPredictor`.
+- Mejora pendiente: publicar o fijar el `DEFAULT_TRAINED_MODEL_NAME` de `NoShowModel2` (ej. `ALTER MODEL NoShowModel2 SET DEFAULT TRAINED_MODEL '<run>'` o `PUBLISH MODEL NoShowModel2`) para que `trainedModelName` siempre se devuelva en la API sin necesidad de especificarlo en cada request.
+
+### 6. Endpoints auxiliares y UI CSP simple
+
+- Estadísticas: `GET /csp/mltest/api/ml/stats/summary`
+- Última cita por paciente (con score): `GET /csp/mltest/api/ml/stats/lastAppointmentByPatient?patientId=1`
+- Generación de mock data: `POST /csp/mltest/api/ml/mock/generate` (params opcionales `months`, `targetOccupancy`, `patients`, `seed`)
+- Página CSP liviana: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
+  - Botones para stats, score por appointment, score por último paciente y generación rápida de mocks.
 
 ### 5. Mantenimiento básico
 
@@ -430,4 +497,3 @@ Sugerir sobreventa controlada de agenda.
 │  ├─ arquitectura.md
 │  └─ demo_script.md
 └─ README.md
-

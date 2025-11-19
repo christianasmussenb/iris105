@@ -1,8 +1,9 @@
 
--- Plantilla IntegratedML + %AutoML para el modelo NoShow
+-- Plantilla IntegratedML + %AutoML para el modelo NoShowModel2
 -- Ejecutar en namespace MLTEST
 
-CREATE MODEL NoShowModel
+-- 1) Definición del modelo (versión oficial: NoShowModel2)
+CREATE MODEL NoShowModel2
 PREDICTING (NoShow)
 WITH (
 	PatientId INTEGER,
@@ -17,8 +18,11 @@ WITH (
 )
 FROM IRIS105.Appointment;
 
+-- (Opcional) Modelo base previo para comparar
+-- CREATE MODEL NoShowModel ... (mismos campos)
+
 -- 2) Entrenamiento (ejemplo de parámetros para %AutoML)
-TRAIN MODEL NoShowModel
+TRAIN MODEL NoShowModel2
 USING {
 	"seed": 42,
 	"TrainMode": "BALANCE",
@@ -26,25 +30,24 @@ USING {
 	"MinimumDesiredScore": 0.80
 };
 
-TRAIN MODEL NoShowModel2 FROM IRIS105.Appointment
-USING {
-	"seed": 42,
-	"TrainMode": "BALANCE",
-	"MaxTime": 60,
-	"MinimumDesiredScore": 0.80
-}
-
 -- 3) Validación
-VALIDATE MODEL NoShowModel;
+VALIDATE MODEL NoShowModel2;
 
-select * from
-/*INFORMATION_SCHEMA.ML_MODELS*/
-/*INFORMATION_SCHEMA.ML_TRAINED_MODELS*/
-/*INFORMATION_SCHEMA.ML_TRAINING_RUNS*/
-/*INFORMATION_SCHEMA.ML_VALIDATION_RUNS*/
-INFORMATION_SCHEMA.ML_VALIDATION_METRICS 
+-- 4) Ejemplo de scoring directo en SQL con PREDICT/PROBABILITY
+SELECT AppointmentId,
+       PREDICT(NoShowModel2) AS PredictedLabel,
+       PROBABILITY(NoShowModel2 FOR 1) AS NoShowProb
+FROM IRIS105.Appointment
+WHERE AppointmentId IN (1,2,3);
+
+-- 5) Métricas y runs registrados
+SELECT * FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME='NoShowModel2';
+SELECT * FROM INFORMATION_SCHEMA.ML_TRAINED_MODELS WHERE MODEL_NAME='NoShowModel2';
+SELECT * FROM INFORMATION_SCHEMA.ML_TRAINING_RUNS WHERE MODEL_NAME='NoShowModel2';
+SELECT * FROM INFORMATION_SCHEMA.ML_VALIDATION_RUNS WHERE MODEL_NAME='NoShowModel2';
+SELECT * FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME='NoShowModel2';
 
 -- 4) Fijar como default (opcional)
--- ALTER MODEL NoShowModel SET DEFAULT;
+-- ALTER MODEL NoShowModel2 SET DEFAULT;
 
 -- Fin de integratedml_model.sql
