@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2023.2 (Build 202U)" ts="2023-06-19 09:50:52">
+<Document name="Province.LUT">
+<lookupTable>
+<entry table="Province" key="Burgos">2</entry>
+<entry table="Province" key="León">3</entry>
+<entry table="Province" key="Palencia">4</entry>
+<entry table="Province" key="Salamanca">5</entry>
+<entry table="Province" key="Segovia">6</entry>
+<entry table="Province" key="Soria">7</entry>
+<entry table="Province" key="Valladolid">8</entry>
+<entry table="Province" key="Zamora">9</entry>
+<entry table="Province" key="Ávila">1</entry>
+</lookupTable>
+</Document></Export>

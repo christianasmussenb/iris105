@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2023.2 (Build 202U)" ts="2023-06-20 16:56:38">
+<Document name="SexHL7.LUT">
+<lookupTable>
+<entry table="SexHL7" key="F">2</entry>
+<entry table="SexHL7" key="M">1</entry>
+</lookupTable>
+</Document></Export>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2023.2 (Build 202U)" ts="2023-06-19 09:51:01">
+<Document name="Hospital.LUT">
+<lookupTable>
+<entry table="Hospital" key="C.A. Segovia">2</entry>
+<entry table="Hospital" key="C.A. Soria">3</entry>
+<entry table="Hospital" key="C.A. Zamora">4</entry>
+<entry table="Hospital" key="C.A. Ávila">1</entry>
+<entry table="Hospital" key="C.A.U. Burgos">5</entry>
+<entry table="Hospital" key="C.A.U. León">6</entry>
+<entry table="Hospital" key="C.A.U. Palencia">7</entry>
+<entry table="Hospital" key="C.A.U. Salamanca">8</entry>
+<entry table="Hospital" key="H. El Bierzo">9</entry>
+<entry table="Hospital" key="H. Medina del Campo">10</entry>
+<entry table="Hospital" key="H. Santiago Apóstol">11</entry>
+<entry table="Hospital" key="H. Santos Reyes">12</entry>
+<entry table="Hospital" key="H.C.U. Valladolid">13</entry>
+<entry table="Hospital" key="H.U. Río Hortega">14</entry>
+</lookupTable>
+</Document></Export>

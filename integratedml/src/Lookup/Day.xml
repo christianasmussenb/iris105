@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2023.2 (Build 202U)" ts="2023-06-19 10:12:18">
+<Document name="Day.LUT">
+<lookupTable>
+<entry table="Day" key="Domingo">7</entry>
+<entry table="Day" key="Jueves">4</entry>
+<entry table="Day" key="Lunes">1</entry>
+<entry table="Day" key="Martes">2</entry>
+<entry table="Day" key="Miércoles">3</entry>
+<entry table="Day" key="Sábado">6</entry>
+<entry table="Day" key="Viernes">5</entry>
+</lookupTable>
+</Document></Export>

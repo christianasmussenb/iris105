@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="IRIS" version="26" zv="IRIS for UNIX (Ubuntu Server LTS for x86-64 Containers) 2023.2 (Build 202U)" ts="2023-06-19 09:51:01">
+<Document name="HospitalProvince.LUT">
+<lookupTable>
+<entry table="HospitalProvince" key="C.A. Segovia">Segovia</entry>
+<entry table="HospitalProvince" key="C.A. Soria">Soria</entry>
+<entry table="HospitalProvince" key="C.A. Zamora">Zamora</entry>
+<entry table="HospitalProvince" key="C.A. Ávila">Ávila</entry>
+<entry table="HospitalProvince" key="C.A.U. Burgos">Burgos</entry>
+<entry table="HospitalProvince" key="C.A.U. León">León</entry>
+<entry table="HospitalProvince" key="C.A.U. Palencia">Palencia</entry>
+<entry table="HospitalProvince" key="C.A.U. Salamanca">Salamanca</entry>
+<entry table="HospitalProvince" key="H. El Bierzo">León</entry>
+<entry table="HospitalProvince" key="H. Medina del Campo">Valladolid</entry>
+<entry table="HospitalProvince" key="H. Santiago Apóstol">Burgos</entry>
+<entry table="HospitalProvince" key="H. Santos Reyes">Burgos</entry>
+<entry table="HospitalProvince" key="H.C.U. Valladolid">Valladolid</entry>
+<entry table="HospitalProvince" key="H.U. Río Hortega">Valladolid</entry>
+</lookupTable>
+</Document></Export>
