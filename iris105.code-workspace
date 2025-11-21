@@ -14,7 +14,7 @@
 			"ns": "MLTEST",
 			"active": true
 		},
-		"chatgpt.openOnStartup": true,
+		"chatgpt.openOnStartup": false,
 		"sqltools.connections": [
 			{
 				"namespace": "MLTEST",
