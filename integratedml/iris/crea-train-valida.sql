@@ -23,7 +23,23 @@ WHERE MODEL_NAME='StayModel'
 --F-Measure: calculated by the following expression: F = 2 * (Precision * Recall) / (Precision + Recall)
 --Accuracy: calculated by dividing the number of true positives and true negatives by the total number of rows (sum of true positives, false positives, true negatives, and false negatives) of the entire data set.
 --With this explanation we can already understand how good the generated model is:
-
+-- Numeros de métricas específicas
+SELECT
+  MODEL_NAME,
+  TRAINED_MODEL_NAME,
+  VALIDATION_RUN_NAME,
+  METRIC_NAME,
+  METRIC_VALUE
+FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS
+WHERE MODEL_NAME = 'StayModel2'
+  AND TRAINED_MODEL_NAME = 'StayModel2_t1'
+  AND METRIC_NAME IN (
+    'Micro-averaged Precision',
+    'Micro-averaged Recall',
+    'Micro-averaged F-Measure',
+    'Micro-averaged ROC-AUC',
+    'Accuracy'
+  );
 --As you can see, in general numbers our model is quite bad, we barely reached 35% hits, if we go into more detail we see that for short stays the accuracy is between 35% and 60%, so we would surely need to expand the data that we have with information about possible pathologies that the patient may have and the triage regarding the fracture.
 
 --Since we do not have these data that would refine our model much more, we are going to imagine that what we have is more than enough for our objective, so we can start feeding our production with ADT_A01 patient admission messages and we will see the predictions we obtain. .

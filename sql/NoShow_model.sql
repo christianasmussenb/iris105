@@ -48,6 +48,21 @@ SELECT * FROM INFORMATION_SCHEMA.ML_VALIDATION_RUNS WHERE MODEL_NAME='NoShowMode
 SELECT * FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME='NoShowModel2';
 
 -- 4) Fijar como default (opcional)
--- ALTER MODEL NoShowModel2 SET DEFAULT;
-
+-- Numeros de métricas específicas
+SELECT
+  MODEL_NAME,
+  TRAINED_MODEL_NAME,
+  VALIDATION_RUN_NAME,
+  METRIC_NAME,
+  METRIC_VALUE
+FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS
+WHERE MODEL_NAME = 'NoShowModel2'
+  AND TRAINED_MODEL_NAME = 'NoShowModel2_t2'
+  AND METRIC_NAME IN (
+    'Micro-averaged Precision',
+    'Micro-averaged Recall',
+    'Micro-averaged F-Measure',
+    'Micro-averaged ROC-AUC',
+    'Accuracy'
+  );
 -- Fin de integratedml_model.sql
