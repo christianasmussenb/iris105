@@ -317,7 +317,7 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
 - Estadísticas: `GET /csp/mltest/api/ml/stats/summary`
 - Última cita por paciente (con score): `GET /csp/mltest/api/ml/stats/lastAppointmentByPatient?patientId=1`
 - Generación de mock data: `POST /csp/mltest/api/ml/mock/generate` (params opcionales `months`, `targetOccupancy`, `patients`, `seed`)
-- Página CSP liviana: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
+- Página CSP liviana: `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
   - Botones para stats, score por appointment, score por último paciente y generación rápida de mocks.
 
 ### 7. Avance y pendientes para el siguiente sprint
