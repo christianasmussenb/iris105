@@ -1,515 +1,197 @@
-# POC – Agente de IA + IntegratedML en InterSystems IRIS 2024.1  
-**Predicción de No-Show en agendas médicas**
+# IRIS105 – SAP Facturación, Glosas, Cartera & RIPS (POC)
 
-## 1. Descripción general
+POC de analítica en **InterSystems IRIS** para integrar información de SAP (reportes `/SISS`) y exponer un cubo de gestión que cubre:
 
-Esta prueba de concepto (POC) muestra cómo combinar **Machine Learning nativo de InterSystems IRIS (IntegratedML + %AutoML)** con un **agente de IA** (LLM externo) para predecir el **riesgo de no presentación (No-Show)** en citas médicas y exponer esos resultados vía **IRIS Interoperability**.
+- Facturación
+- Glosas (radicación, glosas iniciales, firmadas, en trámite, recuperadas)
+- Cartera FI
+- Futuro: alineamiento con el caso de uso RIPS (`docs/Caso de uso - Reporte de RIPS.docx`)
 
-Todo el desarrollo se realizará en:
-
-- **Namespace**: `MLTEST`  
-- **Paquete de clases**: `IRIS105.*`  
-- **IDE**: Visual Studio Code conectado a IRIS (extensión InterSystems ObjectScript / SQLTools).
+Diseñado para trabajar en el repo `IRIS105`, sobre el servidor IRIS `iriscnet` y con VS Code (extensión InterSystems).
 
 ---
 
-## 2. Objetivos de la POC
+## Objetivos
 
-1. **Modelar datos de agenda médica** (pacientes, médicos, boxes, especialidades, citas, pagadores).
-2. **Generar datos sintéticos (mock)** que:
-   - Consideren **3 boxes** de atención.
-   - **8 médicos**.
-   - **3 especialidades**.
-   - Una **utilización promedio de agenda de ~85%**.
-   - Mezcla de pagadores: **80% Fonasa / 20% Isapres**.
-3. Entrenar y validar un modelo **IntegratedML + %AutoML** para predecir el `NoShow` de las citas.
-4. Exponer el modelo mediante:
-   - Funciones SQL `PREDICT(...)`.
-   - Un **servicio REST** en IRIS Interoperability.
-5. Integrar un **agente de IA** que consulte IRIS (SQL + servicios ML) como “tools” para responder preguntas en lenguaje natural.
-6. Dejar una **base de MLOps básico**:
-   - Consultas a vistas `INFORMATION_SCHEMA.ML_*`.
-   - Procedimiento sencillo de reentrenamiento y promoción de modelos.
+1. Definir un **modelo analítico** en IRIS que consolide datos de 4 reportes SAP:
+
+   | Reporte SAP         | Descripción                              |
+   | ------------------- | ---------------------------------------- |
+   | `/SISS/ISHPA_R58`   | Gestión de facturas, radicación y glosas |
+   | `/SISS/ISHPAG_R615` | Consulta de glosas (detalle)             |
+   | `/SISS/ISHPA_R60`   | Resumen de facturación                   |
+   | `/SISS/ISHPA_R82`   | Reporte de cartera FI                    |
+
+2. Poblar el modelo con **datos mock** realistas para demo a negocio.
+3. Exponer un **cubo IRIS Analytics** con métricas clave: facturado, radicado, glosado, rechazado, recuperado, cartera, días de mora y KPIs (% glosa, % rechazo, % cartera vencida).
+4. Dejar listo el “hook” para que los datos provengan de SAP en una fase posterior (batch/ETL, BAPIs o reportes exportados).
 
 ---
 
-## 3. Arquitectura propuesta
+## Arquitectura conceptual
 
-### 3.1. Vista de alto nivel
+### Componentes
 
-- **Capa de Datos (IRIS – namespace `MLTEST`)**
-  - Clases persistentes bajo `IRIS105.*`.
-  - Tablas principales:
-    - `IRIS105.Patient`
-    - `IRIS105.Physician`
-    - `IRIS105.Box`
-    - `IRIS105.Specialty`
-    - `IRIS105.Payer`
-    - `IRIS105.Appointment`
-    - `IRIS105.AppointmentRisk` (resultados de scoring).
+- **IRIS Server**: `iriscnet`
+  - Namespace sugerido: `SAPBI` (o `MLTEST` si ya existe).
+  - BI / Analytics habilitado.
 
-- **Capa de ML (IntegratedML + %AutoML)**
-  - Modelo productivo: `NoShowModel2` definido sobre `IRIS105.Appointment`.
-  - Entrenamiento y validación con provider `%AutoML` usando comandos `TRAIN` / `VALIDATE`.
-  - Monitoreo con vistas `INFORMATION_SCHEMA.ML_MODELS`, `ML_TRAINED_MODELS`, `ML_TRAINING_RUNS`, `ML_VALIDATION_RUNS`, `ML_VALIDATION_METRICS`.
+- **Modelo de datos** (namespace `SAPBI`)
+  - Dimensiones: `IRIS105.BI.DimTiempo`, `IRIS105.BI.DimAseguradora`, `IRIS105.BI.DimCentro` (futuro: `DimPaciente`, `DimEpisodio`).
+  - Hechos: `IRIS105.BI.FactFacturaGlosaCartera`.
+  - Staging (opcional): `IRIS105.BI.Stg_ISHPA_R58`, `Stg_ISHPAG_R615`, `Stg_ISHPA_R60`, `Stg_ISHPA_R82`.
 
-- **Capa de Interoperabilidad (Producción IRIS)**
-  - **Servicio REST** `IRIS105.REST.NoShowService`  
-    - `/api/ml/noshow/score` (usa `NoShowModel2` por defecto, `appointmentId` o `features`).
-    - `/api/ml/stats/summary` (estadísticas básicas de tablas/modelo).
-    - `/api/ml/stats/lastAppointmentByPatient` (última cita del paciente y score).
-    - `/api/ml/mock/generate` (genera datos sintéticos adicionales).
-  - **Business Process** `IRIS105.BP.NoShowScoring`  
-    - Llama al modelo IntegratedML vía SQL.
-    - Aplica umbrales de riesgo.
-  - **Business Operation** `IRIS105.BO.NoShowPersistence`  
-    - Persiste predicciones en `AppointmentRisk`.
-    - Opcional: emite mensajes para otros sistemas (alertas, BI, etc.).
+- **Cubo BI**: `IRIS105.BI.CuboFacturacionGlosasCartera` (fuente: `FactFacturaGlosaCartera`).
 
-- **Capa de Agente de IA**
-  - Micro-servicio o clase wrapper (`IRIS105.Agent.*`) que:
-    - Expone un endpoint tipo `/api/agent/chat`.
-    - Llama a un **LLM externo** (OpenAI u otro).
-    - Implementa “tools”:
-      - `GetHighRiskAppointments(fecha)`
-      - `SimulateScenario(params)`
-      - `GetModelStatus()`
+- **Mock / ETL**
+  - Mock: `IRIS105.BI.MockDataGenerator`.
+  - Futuro ETL SAP: `IRIS105.BI.ETL.SAPLoader` (lectura de reportes) + `IRIS105.BI.ETL.FactBuilder` (consolidación staging → fact).
 
-- **Herramientas de desarrollo**
-  - Visual Studio Code + extensión InterSystems.
-  - Repositorio de código (Git) con `README.md` y estructura de carpetas clara.
+### Flujo de datos
+
+1. **Hoy (POC/mock)**: `MockDataGenerator` → dimensiones + fact → build cubo → dashboards/consultas.
+2. **Futuro (SAP real)**: reportes `/SISS` → archivos/llamadas → staging → fact → refresh cubo.
 
 ---
 
-## 4. Modelo de datos y datos sintéticos
-
-### 4.1. Entidades principales
-
-Todas las clases se crean en el paquete `IRIS105`:
-
-- `IRIS105.Patient`
-  - `PatientId`
-  - `Run` / identificador local (opcional)
-  - `FirstName`, `LastName`
-  - `Sex` (M/F)
-  - `BirthDate`
-  - `Age` (campo derivado o calculado en queries)
-  - `PayerId` (FK a `IRIS105.Payer`)
-  - **Dimensiones opcionales**:
-    - `Region` / `Comuna`
-    - `SocioEconomicSegment` (A/B/C/D, opcional)
-
-- `IRIS105.Physician`
-  - `PhysicianId`
-  - `FirstName`, `LastName`
-  - `SpecialtyId` (FK)
-  - `DefaultBoxId` (FK, opcional)
-
-- `IRIS105.Specialty`
-  - `SpecialtyId`
-  - `Name` (ej. “Medicina Interna”, “Traumatología”, “Pediatría”)
-
-- `IRIS105.Box`
-  - `BoxId`
-  - `Name`
-  - `Location` (ej. sucursal/sede)
-
-- `IRIS105.Payer`
-  - `PayerId`
-  - `Name` (ej. “Fonasa”, “Colmena”, “Consalud”, etc.)
-  - `Type` (FONASA / ISAPRE)
-
-- `IRIS105.Appointment`
-  - `AppointmentId`
-  - `PatientId`
-  - `PhysicianId`
-  - `BoxId`
-  - `SpecialtyId`
-  - `StartDateTime`
-  - `EndDateTime`
-  - `BookingChannel` (WEB / CALLCENTER / PRESENCIAL)
-  - `BookingDaysInAdvance` (número de días)
-  - `HasSMSReminder` (0/1)
-  - `Reason` (texto breve)
-  - `NoShow` (0/1 – etiqueta histórica)
-
-- `IRIS105.AppointmentRisk`
-  - `AppointmentId` (FK)
-  - `ScoredAt`
-  - `NoShowProb` (0..1)
-  - `RiskLevel` (LOW / MEDIUM / HIGH)
-  - `ModelName`, `TrainedModelName`
-
----
-
-### 4.2. Parámetros para generación de datos mock
-
-- **Horizonte de datos**:
-  - Sugerido: **3–6 meses** de agenda histórica para tener volumen suficiente.
-
-- **Boxes (`IRIS105.Box`)**:
-  - 3 boxes, por ejemplo:
-    - BOX-1, BOX-2, BOX-3
-  - Asociados a una misma sede o a sedes distintas (opcional).
-
-- **Médicos (`IRIS105.Physician`)**:
-  - 8 médicos distribuidos entre 3 especialidades, por ejemplo:
-    - Especialidad A: Medicina Interna → 3 médicos
-    - Especialidad B: Traumatología → 3 médicos
-    - Especialidad C: Pediatría → 2 médicos
-
-- **Ocupación de agendas (~85%)**:
-  - Definir una grilla de atención diaria por médico, ej.:
-    - Lunes–Viernes, 8 bloques de 30 minutos por jornada (ej. 09:00–13:00).
-  - Total de slots = (médicos × días × slots por día).
-  - Se genera un ~85% de esos slots como citas ocupadas (`IRIS105.Appointment`).
-
-- **Mezcla de pagadores (“payers”)**:
-  - **80% Fonasa** / **20% Isapres**.
-  - En la generación de pacientes:
-    - `Payer.Type = FONASA` en 80% de los casos.
-    - El 20% restante repartido entre 2–3 Isapres (ej. “Colmena”, “Consalud”, “Banmédica”).
-
----
-
-### 4.3. Diversidad de población (sexo, edad)
-
-Para que el dataset sea verosímil y útil para entrenamiento:
-
-- **Distribución por sexo** (binaria para simplificar la POC):
-  - ~52% mujeres, ~48% hombres.
-  - Esto se asigna al crear registros en `IRIS105.Patient`.
-
-- **Distribución por edad** (basada en consultas ambulatorias generales):
-  - 0–17 años: 10% (principalmente para Pediatría).
-  - 18–39 años: 30%.
-  - 40–64 años: 35%.
-  - 65+ años: 25%.
-- En la generación de citas:
-  - Para Pediatría, preferir pacientes 0–17.
-  - Para Medicina Interna, más presencia en 40–64 y 65+.
-  - Para Traumatología, mezcla amplia 18–64.
-
----
-
-### 4.4. Otras dimensiones recomendadas
-
-Para enriquecer el modelo y la demo, se recomienda incluir:
-
-- **Día de la semana** (derivado de `StartDateTime`).
-- **Franja horaria**:
-  - Mañana / Tarde (campo derivado).
-- **Tipo de cita**:
-  - `VisitType` (PRIMERA_VEZ / CONTROL / URGENCIA_PROGRAMADA).
-- **Antecedente de no-show previo**:
-  - `PastNoShowCount` por paciente, calculado al generar los datos.
-- **Tiempo de espera**:
-  - Diferencia entre la fecha de reserva y la fecha de la cita (ya representada en `BookingDaysInAdvance`).
-- **Canal de recordatorio adicional** (opcional):
-  - Email / WhatsApp (simple flag booleana para la POC).
-
----
-
-## 5. Flujo de ML con IntegratedML + %AutoML
-
-En el namespace `MLTEST`, el modelo IntegratedML se define y usa desde SQL:
-
-### 1. **Definición de modelo productivo (NoShowModel2)**
-
-```sql
-CREATE MODEL NoShowModel2
-PREDICTING (NoShow)
-FROM IRIS105.Appointment
-WITH (
-  PatientId,
-  PhysicianId,
-  BoxId,
-  SpecialtyId,
-  StartDateTime,
-  BookingChannel,
-  BookingDaysInAdvance,
-  HasSMSReminder,
-  Reason
-);
-
-### 2. **Entrenamiento del modelo**
-
-```sql
-TRAIN MODEL NoShowModel2
-USING {
-  "seed": 42,
-  "TrainMode": "BALANCE",
-  "MaxTime": 60,
-  "MinimumDesiredScore": 0.80
-};
-
-### 3. **Validación del modelo**
-
-```sql
-VALIDATE MODEL NoShowModel2;
-
-### 4. **Uso en predicción vía IntegratedML**
-
-```sql
-SELECT AppointmentId,
-       PREDICT(NoShowModel2) AS PredictedLabel,
-       PROBABILITY(NoShowModel2 FOR 1) AS NoShowProb
-FROM IRIS105.Appointment
-WHERE StartDateTime BETWEEN '2025-11-18' AND '2025-11-19';
-
-### 5. **Consumo vía API REST (para páginas web u otros clientes)**
-
-- Servicio: `IRIS105.REST.NoShowService`  
-- Endpoint: `POST /api/ml/noshow/score`  
-- Modelo por defecto: `NoShowModel2` (se puede especificar `trainedModelName` si se desea fijar un run concreto).
-
-**Ejemplos de request**
-
-1) Scoring de una cita ya cargada:
-
-```bash
-curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
-  -H "Content-Type: application/json" \
-  -d '{"appointmentId":123}'
-```
-
-2) Scoring con payload ad-hoc (sin persistir la cita):
-
-```bash
-curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
-  -H "Content-Type: application/json" \
-  -d '{
-        "modelName":"NoShowModel2",
-        "features":{
-          "PatientId":10,
-          "PhysicianId":3,
-          "BoxId":2,
-          "SpecialtyId":1,
-          "StartDateTime":"2025-11-18 10:30:00",
-          "BookingChannel":"WEB",
-          "BookingDaysInAdvance":5,
-          "HasSMSReminder":1,
-          "Reason":"Control post operatorio"
-        }
-      }'
-```
-
-**Ejemplo de respuesta**
-
-```json
-{
-  "appointmentId": 123,
-  "predictedLabel": 1,
-  "probability": 0.84,
-  "modelName": "NoShowModel2",
-  "trainedModelName": "",
-  "scoredAt": "2025-11-18T15:42:10"
-}
-```
-
-- `predictedLabel` proviene de `PREDICT(...)`.
-- `probability` proviene de `PROBABILITY(... FOR 1)`.
-- Estos mismos comandos SQL se usan internamente en `IRIS105.Util.NoShowPredictor`.
-- Mejora pendiente: publicar o fijar el `DEFAULT_TRAINED_MODEL_NAME` de `NoShowModel2` (ej. `ALTER MODEL NoShowModel2 SET DEFAULT TRAINED_MODEL '<run>'` o `PUBLISH MODEL NoShowModel2`) para que `trainedModelName` siempre se devuelva en la API sin necesidad de especificarlo en cada request.
-
-### 6. Endpoints auxiliares y UI CSP simple
-
-- Estadísticas: `GET /csp/mltest/api/ml/stats/summary`
-- Última cita por paciente (con score): `GET /csp/mltest/api/ml/stats/lastAppointmentByPatient?patientId=1`
-- Generación de mock data: `POST /csp/mltest/api/ml/mock/generate` (params opcionales `months`, `targetOccupancy`, `patients`, `seed`)
-- Página CSP liviana: `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
-  - Botones para stats, score por appointment, score por último paciente y generación rápida de mocks.
-
-### 7. Avance y pendientes para el siguiente sprint
-
-**Avance**:  
-- API REST funcionando (`score`, `stats/summary`, `stats/model`, `stats/lastAppointmentByPatient`, `mock/generate`).  
-- UI CSP básica para consumir endpoints y visualizar stats/modelo.  
-- Modelo `NoShowModel2` entrenado y validado; consultas de métricas operativas.
-
-**Pendientes priorizados**:  
-- Publicar/fijar `DEFAULT_TRAINED_MODEL_NAME` para `NoShowModel2` y ajustar parámetros de riesgo (umbrales rojo/amarillo/verde).  
-- Implementar scoring batch por día específico (ej. `POST /api/ml/noshow/score/batch?date=YYYY-MM-DD`) y reflejar riesgos agregados en `AppointmentRisk`.  
-- Persistir cada score en `IRIS105.AppointmentRisk` vía API/BP y exponer el conteo en `stats/summary`.  
-- Semáforo de riesgo en la UI (rojo/amarillo/verde según probabilidad configurada).  
-- Documentar los umbrales de riesgo y dejarlos parametrizables para futuras demos.  
-- Añadir ejemplos curl para batch por día y actualizar `docs/demo_script.md` tras implementar.  
-- (Opcional) Tests rápidos de los nuevos endpoints de batch y persistencia.
-
-### 5. Mantenimiento básico
-
-- Consultas a INFORMATION_SCHEMA.ML_* para:
-    - Ver modelos entrenados.
-    - Ver métricas de validación.
-
-- ALTER MODEL para:
-  - Fijar DEFAULT model.
-  - PURGE de runs antiguos.
-
-## 6. Plan de trabajo – 4 semanas (Sprints)
-
-### Sprint 1 – Setup, modelo de datos y tooling
-
-Objetivo: Dejar el entorno listo y el modelo de datos definido.
-
-Crear namespace MLTEST en IRIS 2024.1.
-
-Configurar conexión de Visual Studio Code a MLTEST.
-
-Definir clases de dominio en paquete IRIS105.*:
-
-Patient, Physician, Box, Specialty, Payer, Appointment, AppointmentRisk.
-
-Crear clase utilitaria IRIS105.Util.MockConfig con parámetros de generación (horizonte, ocupación, mix de pagadores).
-
-Documentar en el repo la arquitectura y este README.md.
-
-Entregables:
-
-- Namespace operativo MLTEST.
-
-- Clases de dominio compiladas.
-
-- Diagrama lógico de datos (opcional, en docs/).
-
-### Sprint 2 – Generación de datos mock y primer modelo IntegratedML
-
-Objetivo: Poblar tablas y entrenar el primer modelo.
-
-Implementar IRIS105.Util.MockData:
-
-Generación de pacientes según distribución sexo/edad.
-
-Creación de médicos, boxes y especialidades.
-
-Construcción de agenda con ~85% de ocupación a lo largo de 3–6 meses.
-
-Asignación de NoShow con reglas probabilísticas (ej. más no-show en jóvenes, en ciertas franjas horarias, sin recordatorio SMS).
-
-Cargar datos en las tablas en MLTEST.
-
-Crear y entrenar el modelo IntegratedML NoShowModel.
-
-Ejecutar VALIDATE MODEL y revisar métricas en INFORMATION_SCHEMA.ML_*.
-
-Entregables:
-
-- Dataset sintético completo.
-
-- Script SQL para CREATE/TRAIN/VALIDATE MODEL.
-
-- Reporte simple de métricas del modelo (AUC/Accuracy).
-
-### Sprint 3 – Interoperability: servicio REST de scoring
-
-Objetivo: Exponer el modelo como servicio en una Producción IRIS.
-
-Crear Producción IRIS105.Production.NoShow.
-
-Implementar:
-
-IRIS105.BS.NoShowREST (Business Service REST).
-
-IRIS105.BP.NoShowScoring (Business Process).
-
-IRIS105.BO.NoShowPersistence (Business Operation).
-
-Endpoint sugerido:
-
-POST /api/ml/noshow/score
-
-Entrada: JSON con uno o más AppointmentId o datos de cita.
-
-Salida: NoShowProb, RiskLevel, ModelName.
-
-Persistir los resultados en IRIS105.AppointmentRisk.
-
-Probar el flujo end-to-end con Postman / curl.
-
-Entregables:
-
-- Producción configurada y en RUNNING.
-
-- Endpoint REST funcional.
-
-- Ejemplos de requests/responses documentados.
-
-### Sprint 4 – Agente de IA, demo final y MLOps ligero
-
-Objetivo: Integrar un LLM como agente y cerrar la POC.
-
-Implementar clase wrapper IRIS105.Agent.Controller:
-
-Endpoint /api/agent/chat.
-
-Integración con LLM (OpenAI u otro) mediante HTTP.
-
-Definición de “tools”:
-
-GetHighRiskAppointments(fecha): consulta SQL a AppointmentRisk.
-
-SimulateScenario(params): llama a /api/ml/noshow/score.
-
-GetModelStatus(): consulta INFORMATION_SCHEMA.ML_*.
-
-Diseñar 5–6 prompts de ejemplo para demo:
-
-“Muéstrame las citas de mañana con mayor riesgo de no-show.”
-
-“¿Por qué esta cita tiene 85% de probabilidad de no presentar al paciente?”
-
-“¿Qué pasa si agregamos recordatorio SMS a las citas del lunes en la mañana?”
-
-Implementar script sencillo de reentrenamiento periódico (tarea programada) que:
-
-TRAIN + VALIDATE + comparación de métricas.
-
-Actualiza el modelo por defecto si mejora.
-
-Preparar documentación final:
-
-Diagramas simples de la arquitectura.
-
-Pasos para reproducir la POC en otro entorno.
-
-Entregables:
-
-- Agente de IA funcional (vía HTTP) apoyado en IRIS.
-
-- Tarea de reentrenamiento básico documentada.
-
-- Guía de demo y slide/resumen técnico.
-
-## 7. Próximos pasos / extensiones posibles
-
-Incluir más fuentes de datos (ej. asistencia a recordatorios, clima, feriados).
-
-Conectar IRIS con un dashboard BI (IRIS BI / Power BI / Tableau).
-
-Integrar con un sistema real de agenda clínica.
-
-Implementar lógica de acciones automáticas:
-
-Reconfirmar citas de alto riesgo.
-
-Enviar recordatorios adicionales.
-
-Sugerir sobreventa controlada de agenda.
-
-## 8. Repositorio y estructura sugerida
-
-/
-├─ src/
-│  ├─ IRIS105/
-│  │  ├─ Domain/        # Clases Patient, Physician, Box, etc.
-│  │  ├─ ML/            # Scripts IntegratedML, utilidades ML
-│  │  ├─ Interop/       # Producción, BS/BP/BO
-│  │  └─ Agent/         # Integración con LLM
-├─ sql/
-│  ├─ create_tables.sql
-│  ├─ integratedml_model.sql
-│  └─ demo_queries.sql
+## Estructura sugerida del repositorio
+
+```text
+IRIS105/
+├─ README.md
 ├─ docs/
-│  ├─ arquitectura.md
-│  └─ demo_script.md
-└─ README.md
+│  └─ Caso de uso - Reporte de RIPS.docx
+├─ src/
+│  └─ IRIS105/
+│     └─ BI/
+│        ├─ DimTiempo.cls
+│        ├─ DimAseguradora.cls
+│        ├─ DimCentro.cls
+│        ├─ FactFacturaGlosaCartera.cls
+│        ├─ CuboFacturacionGlosasCartera.cls
+│        ├─ MockDataGenerator.cls
+│        ├─ ETL/
+│        │  ├─ SAPLoader.cls           # futuro
+│        │  └─ FactBuilder.cls         # futuro
+│        └─ Util/
+│           └─ Log.cls                 # utilidades de logging
+├─ sql/
+│  ├─ create_tables.sql                # DDL (opcional)
+│  └─ seed_mock_data.sql               # mock via SQL (opcional)
+└─ .vscode/
+   ├─ settings.json                    # Config VS Code IRIS
+   └─ launch.json                      # Depuración IRIS
+```
+
+---
+
+## Modelo de datos
+
+### Fact `IRIS105.BI.FactFacturaGlosaCartera`
+
+Nivel de detalle: Factura–Aseguradora–Centro–Fecha (extensible a línea).
+
+- Identificadores: `FactID` (PK), `FacturaNum`, `AseguradoraID`, `CentroID`, `PacienteID` (futuro), `EpisodioID` (futuro).
+- Fechas: `FechaFactura`, `FechaRadicacion`, `FechaGlosa`, `FechaVencimiento`, `FechaPago`.
+- Medidas de facturación: `MontoFacturado`, `MontoRadicado`, `MontoAceptado`, `MontoRechazado`, `MontoRecuperado`.
+- Medidas de glosa: `MontoGlosaInicial`, `MontoGlosaFirmada`, `MontoGlosaEnTramite`, `NumGlosas`.
+- Medidas de cartera: `SaldoCartera`, `DiasMora`, `DiasDesdeRadicacion`.
+- Atributos: `LineaNegocio`, `EstadoFactura`, `EstadoCartera` (corriente / vencida), `FuenteReporte` (R58, R60, R82, mixto).
+
+### Dimensiones clave
+
+- `IRIS105.BI.DimTiempo`: `DateKey` (YYYYMMDD), `Fecha`, `Dia`, `Mes`, `Año`, `Trimestre`, `Semana`.
+- `IRIS105.BI.DimAseguradora`: `AseguradoraID`, `Nombre`, `Tipo` (Fonasa/Isapre/EPS), `Segmento` (pública/privada).
+- `IRIS105.BI.DimCentro`: `CentroID`, `Nombre`, `TipoCentro`, `Ciudad`, `Region`.
+- Futuro: `DimPaciente`, `DimEpisodio`.
+
+---
+
+## Cubo IRIS `IRIS105.BI.CuboFacturacionGlosasCartera`
+
+- Dimensiones: `Tiempo` (basada en `FechaFactura`, jerarquía Año–Mes–Día), `Aseguradora`, `Centro`, `EstadoFactura`, `EstadoCartera`.
+- Medidas: `TotalFacturado`, `TotalRadicado`, `TotalGlosado`, `TotalRechazado`, `TotalRecuperado`, `SaldoCartera`, `DiasMoraPromedio`.
+- KPIs: `%GlosaSobreRadicado`, `%RechazoFinal`, `%CarteraVencida`.
+
+---
+
+## Estrategia de datos mock
+
+Clase: `IRIS105.BI.MockDataGenerator`
+
+1. Poblar `DimTiempo` con rango de fechas (ej. últimos 24 meses).
+2. Poblar `DimAseguradora` (6–8 aseguradoras) y `DimCentro` (3–5 centros).
+3. Generar `FactFacturaGlosaCartera` por combinación día–aseguradora–centro:
+   - N facturas/día (0–20).
+   - `MontoFacturado` 100k–2M aprox; `MontoRadicado` cercano al facturado.
+   - `MontoGlosaInicial` 0–20% del radicado; `MontoRechazado` como % de glosa.
+   - `SaldoCartera` y `DiasMora` en función de tiempo y probabilidad de pago.
+   - `EstadoFactura` y `EstadoCartera` coherentes.
+4. Ejecutable con: `Do ##class(IRIS105.BI.MockDataGenerator).RunAll()`.
+
+---
+
+## Integración futura con SAP
+
+- `IRIS105.BI.ETL.SAPLoader`: lectura de archivos CSV/XML exportados desde `/SISS/ISHPA_R58`, `/SISS/ISHPAG_R615`, `/SISS/ISHPA_R60`, `/SISS/ISHPA_R82` hacia staging.
+- `IRIS105.BI.ETL.FactBuilder`: consolidación staging → `FactFacturaGlosaCartera`, con reglas de reconciliación vs. R60.
+
+---
+
+## Entorno (VS Code + IRIS `iriscnet`)
+
+### Requisitos
+
+- VS Code + extensión **InterSystems ObjectScript**
+- Acceso a IRIS `iriscnet` (host, puerto, credenciales)
+- Git instalado
+
+### Pasos
+
+1. Clonar:
+   ```bash
+   git clone https://github.com/<tu-org>/IRIS105.git
+   cd IRIS105
+   ```
+2. Abrir en VS Code:
+   ```bash
+   code .
+   ```
+3. Configurar `.vscode/settings.json` (ejemplo):
+   ```json
+   {
+     "objectscript.conn": {
+       "active": true,
+       "host": "iriscnet",
+       "port": 1972,
+       "ns": "SAPBI",
+       "username": "_SYSTEM",
+       "password": "SYS",
+       "https": false
+     }
+   }
+   ```
+4. Crear namespace `SAPBI` en `iriscnet` (si no existe) con BI/Analytics.
+5. Sincronizar clases y compilar desde VS Code.
+
+---
+
+## Tareas sugeridas (Agent/Codex)
+
+1. Crear clases de dimensiones y fact en `src/IRIS105/BI/*.cls`.
+2. Implementar `IRIS105.BI.MockDataGenerator` (DimTiempo, DimAseguradora, DimCentro, Fact).
+3. Definir el cubo `CuboFacturacionGlosasCartera` apuntando a la tabla de hechos.
+4. (Opcional) Scripts SQL en `sql/` para recrear tablas o cargar datos de ejemplo.
+5. Construir el cubo y validar con consultas (Analyzer/MDX):
+   - Monto facturado por aseguradora y mes.
+   - % de glosa por aseguradora.
+   - Cartera vencida por aseguradora.
+
+---
+
+## Próximos pasos
+
+1. Completar y probar `MockDataGenerator` con 12–24 meses, 5–10 aseguradoras, 3–5 centros.
+2. Validar KPIs con negocio (caso de uso RIPS).
+3. Preparar demo (dashboards o consultas) sobre el cubo.
+4. Diseñar layout de salida de los reportes SAP `/SISS` para conectar el ETL real.
