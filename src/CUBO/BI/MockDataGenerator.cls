@@ -1,4 +1,4 @@
-Class CUBO.BI.MockDataGenerator Extends %RegisteredObject
+Class CUBO.BI.MockDataGenerator Extends %RegisteredObject [ ProcedureBlock ]
 {
 
 /// Ejecuta el llenado completo de dimensiones y fact con datos simulados.
@@ -35,6 +35,7 @@ ClassMethod ClearAll() As %Status
 
 ClassMethod FillDimAseguradora(top As %Integer = 6) As %Status
 {
+    set sc=$SYSTEM.Status.OK()
     set data(1)="SaludPlus^Fonasa^Publica"
     set data(2)="VivaCare^Isapre^Privada"
     set data(3)="AndesVida^Isapre^Privada"
@@ -45,7 +46,7 @@ ClassMethod FillDimAseguradora(top As %Integer = 6) As %Status
     set data(8)="Universal^Fonasa^Publica"
 
     for i=1:1:top {
-        quit:'$data(data(i))
+        if '$data(data(i)) quit
         set row=data(i)
         set obj=##class(CUBO.BI.DimAseguradora).%New()
         set obj.AseguradoraID=i
@@ -53,13 +54,14 @@ ClassMethod FillDimAseguradora(top As %Integer = 6) As %Status
         set obj.Tipo=$piece(row,"^",2)
         set obj.Segmento=$piece(row,"^",3)
         set sc=obj.%Save()
-        quit:'$SYSTEM.Status.IsOK(sc) sc
+        quit:'$SYSTEM.Status.IsOK(sc)
     }
     quit $SYSTEM.Status.OK()
 }
 
 ClassMethod FillDimCentro(top As %Integer = 4) As %Status
 {
+    set sc=$SYSTEM.Status.OK()
     set data(1)="Clinica Central^Hospital^Santiago^RM"
     set data(2)="Centro Norte^Ambulatorio^Valparaiso^V"
     set data(3)="Red Sur^Hospital^Concepcion^VIII"
@@ -67,7 +69,7 @@ ClassMethod FillDimCentro(top As %Integer = 4) As %Status
     set data(5)="Urgencias Costa^Urgencias^Valdivia^XIV"
 
     for i=1:1:top {
-        quit:'$data(data(i))
+        if '$data(data(i)) quit
         set row=data(i)
         set obj=##class(CUBO.BI.DimCentro).%New()
         set obj.CentroID=i
@@ -76,7 +78,7 @@ ClassMethod FillDimCentro(top As %Integer = 4) As %Status
         set obj.Ciudad=$piece(row,"^",3)
         set obj.Region=$piece(row,"^",4)
         set sc=obj.%Save()
-        quit:'$SYSTEM.Status.IsOK(sc) sc
+        quit:'$SYSTEM.Status.IsOK(sc)
     }
     quit $SYSTEM.Status.OK()
 }
@@ -85,7 +87,9 @@ ClassMethod FillDimTiempo(startDate As %String = "2024-01-01", months As %Intege
 {
     set start=$ZDATEH(startDate,3)
     quit:start="" $SYSTEM.Status.Error(5001,"Fecha invalida: "_startDate)
+    quit:start<0 $SYSTEM.Status.Error(5001,"Fecha invalida: "_startDate)
     set days=months*31
+    set sc=$SYSTEM.Status.OK()
     for i=0:1:days-1 {
         set hDate=start+i
         set dateStr=$ZDATE(hDate,3)
@@ -98,7 +102,7 @@ ClassMethod FillDimTiempo(startDate As %String = "2024-01-01", months As %Intege
         set obj.Trimestre=((obj.Mes-1)\3)+1
         set obj.Semana=((hDate-start)\7)+1
         set sc=obj.%Save()
-        quit:'$SYSTEM.Status.IsOK(sc) sc
+        quit:'$SYSTEM.Status.IsOK(sc)
     }
     quit $SYSTEM.Status.OK()
 }
@@ -107,8 +111,10 @@ ClassMethod FillFact(startDate As %String = "2024-01-01", months As %Integer = 1
 {
     set start=$ZDATEH(startDate,3)
     quit:start="" $SYSTEM.Status.Error(5001,"Fecha invalida: "_startDate)
+    quit:start<0 $SYSTEM.Status.Error(5001,"Fecha invalida: "_startDate)
     set days=months*31
     set today=$piece($horolog,",",1)
+    set sc=$SYSTEM.Status.OK()
 
     set lineas(1)="Ambulatorio"
     set lineas(2)="Hospitalizacion"
@@ -185,7 +191,7 @@ ClassMethod FillFact(startDate As %String = "2024-01-01", months As %Integer = 1
                     set factura.DiasDesdeRadicacion=$select(today>factura.FechaRadicacion:today-factura.FechaRadicacion,1:0)
 
                     set sc=factura.%Save()
-                    quit:'$SYSTEM.Status.IsOK(sc) sc
+                    quit:'$SYSTEM.Status.IsOK(sc)
                     set invCounter=invCounter+1
                 }
                 quit:'$SYSTEM.Status.IsOK($get(sc))
