@@ -1,68 +1,66 @@
+/// 
 Class CUBO.BI.CuboFacturacionGlosasCartera Extends %DeepSee.CubeDefinition [ DependsOn = CUBO.BI.FactFacturaGlosaCartera ]
 {
 
+/// Cube definition from Architect.
 XData Cube [ XMLNamespace = "http://www.intersystems.com/deepsee" ]
 {
-<cube 
-    name="CuboFacturacionGlosasCartera"
-    caption="Facturación, Glosas y Cartera"
-    owner="_SYSTEM"
-    sourceClass="CUBO.BI.FactFacturaGlosaCartera"
-    >
-
-  <!-- Medidas base -->
-  <measure name="TotalFacturado"   sourceProperty="MontoFacturado"/>
-  <measure name="TotalRadicado"    sourceProperty="MontoRadicado"/>
-  <measure name="TotalAceptado"    sourceProperty="MontoAceptado"/>
-  <measure name="TotalRechazado"   sourceProperty="MontoRechazado"/>
-  <measure name="TotalRecuperado"  sourceProperty="MontoRecuperado"/>
-  <measure name="TotalGlosado"     sourceProperty="MontoGlosaInicial"/>
-  <measure name="SaldoCartera"     sourceProperty="SaldoCartera"/>
-  <measure name="DiasMoraPromedio" sourceProperty="DiasMora"/>
-
-  <!-- Dimensión Tiempo basada en FechaFactura -->
-  <dimension name="Tiempo">
-    <hierarchy name="FechaFactura">
-      <level name="Fecha" sourceProperty="FechaFactura" displayName="Fecha"/>
+<cube xmlns="http://www.intersystems.com/deepsee" name="CuboFacturacionGlosasCartera" disabled="false" abstract="false" sourceClass="CUBO.BI.FactFacturaGlosaCartera" owner="_SYSTEM" caption="Facturación, Glosas y Cartera" namedFactNums="true" countMeasureName="%COUNT" bucketSize="8" bitmapChunkInMemory="false" precompute="0" disableListingGroups="false" enableSqlRestrict="false">
+  <dimension name="Tiempo" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="FechaFactura" disabled="false" hidden="false">
+      <level name="Fecha" displayName="Fecha" disabled="false" sourceProperty="FechaFactura" factNumber="6" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
-  <!-- Dimensión Aseguradora -->
-  <dimension name="Aseguradora">
-    <hierarchy name="Aseguradora">
-      <level name="AseguradoraID" sourceProperty="AseguradoraID"/>
+  <dimension name="Aseguradora" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="Aseguradora" disabled="false" hidden="false">
+      <level name="AseguradoraID" disabled="false" sourceProperty="AseguradoraID" factNumber="2" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
-  <!-- Dimensión Centro -->
-  <dimension name="Centro">
-    <hierarchy name="Centro">
-      <level name="CentroID" sourceProperty="CentroID"/>
+  <dimension name="Centro" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="Centro" disabled="false" hidden="false">
+      <level name="CentroID" disabled="false" sourceProperty="CentroID" factNumber="3" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
-  <!-- Estados de factura -->
-  <dimension name="EstadoFactura">
-    <hierarchy name="EstadoFactura">
-      <level name="EstadoFactura" sourceProperty="EstadoFactura"/>
+  <dimension name="EstadoFactura" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="EstadoFactura" disabled="false" hidden="false">
+      <level name="EstadoFactura" disabled="false" sourceProperty="EstadoFactura" factNumber="24" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
-  <!-- Estados de cartera -->
-  <dimension name="EstadoCartera">
-    <hierarchy name="EstadoCartera">
-      <level name="EstadoCartera" sourceProperty="EstadoCartera"/>
+  <dimension name="EstadoCartera" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="EstadoCartera" disabled="false" hidden="false">
+      <level name="EstadoCartera" disabled="false" sourceProperty="EstadoCartera" factNumber="25" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
-  <!-- Línea de negocio -->
-  <dimension name="LineaNegocio">
-    <hierarchy name="LineaNegocio">
-      <level name="LineaNegocio" sourceProperty="LineaNegocio"/>
+  <dimension name="LineaNegocio" disabled="false" hasAll="true" type="data" hidden="false" showHierarchies="default">
+    <hierarchy name="LineaNegocio" disabled="false" hidden="false">
+      <level name="LineaNegocio" disabled="false" sourceProperty="LineaNegocio" factNumber="23" list="false" useDisplayValue="false" useAsFilter="true" hidden="false">
+      </level>
     </hierarchy>
   </dimension>
-
+  <measure name="TotalFacturado" disabled="false" sourceProperty="MontoFacturado" factNumber="11" hidden="false" searchable="false">
+  </measure>
+  <measure name="TotalRadicado" disabled="false" sourceProperty="MontoRadicado" factNumber="12" hidden="false" searchable="false">
+  </measure>
+  <measure name="TotalAceptado" disabled="false" sourceProperty="MontoAceptado" factNumber="13" hidden="false" searchable="false">
+  </measure>
+  <measure name="TotalRechazado" disabled="false" sourceProperty="MontoRechazado" factNumber="14" hidden="false" searchable="false">
+  </measure>
+  <measure name="TotalRecuperado" disabled="false" sourceProperty="MontoRecuperado" factNumber="15" hidden="false" searchable="false">
+  </measure>
+  <measure name="TotalGlosado" disabled="false" sourceProperty="MontoGlosaInicial" factNumber="16" hidden="false" searchable="false">
+  </measure>
+  <measure name="SaldoCartera" disabled="false" sourceProperty="SaldoCartera" factNumber="20" hidden="false" searchable="false">
+  </measure>
+  <measure name="DiasMoraPromedio" disabled="false" sourceProperty="DiasMora" factNumber="21" hidden="false" searchable="false">
+  </measure>
 </cube>
 }
+
+Parameter DOMAIN;
 
 }

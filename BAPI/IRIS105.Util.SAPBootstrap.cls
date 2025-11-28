@@ -8,14 +8,7 @@ Class IRIS105.Util.SAPBootstrap Extends %RegisteredObject
 /// pRfcListCSV: lista separada por coma de funciones SAP a generar.
 /// pDestinationName: (opcional) nombre de destination JCo para hacer ping.
 /// Devuelve %Status.
-ClassMethod Setup(
-    pJarPath As %String,
-    pGatewayPort As %Integer = 55555,
-    pGatewayHost As %String = "127.0.0.1",
-    pTargetPackage As %String = "IRIS105.SAP",
-    pRfcListCSV As %String = "",
-    pDestinationName As %String = ""
-) As %Status
+ClassMethod Setup(pJarPath As %String, pGatewayPort As %Integer = 55555, pGatewayHost As %String = "127.0.0.1", pTargetPackage As %String = "IRIS105.SAP", pRfcListCSV As %String = "", pDestinationName As %String = "") As %Status
 {
     set sc = $$$OK
     do ..LogInfo("=== SAPBootstrap.Setup START ===")
@@ -137,9 +130,11 @@ ClassMethod SafeCreateClasses(pRfcName As %String, pPackage As %String) As %Stat
 
 /// Hace ping usando JCoDestination si hay destino configurado.
 /// No es fatal si falla.
-ClassMethod PingDestination(pDest As %String) As %Status
+ClassMethod PingDestination(pDest As %String) As %Status [ ProcedureBlock = 1 ]
 {
     do ..LogInfo("Probando ping a destination "_pDest_" ...")
+
+    set sc = $$$OK
 
     // Si no existen proxies Java, no hay cómo hacer ping.
     if '##class(%Dictionary.ClassDefinition).%ExistsId("com.sap.conn.jco.JCoDestinationManager") {
@@ -151,11 +146,11 @@ ClassMethod PingDestination(pDest As %String) As %Status
         set dest = ##class(com.sap.conn.jco.JCoDestinationManager).getDestination(pDest)
         do dest.ping()
         do ..LogInfo("Ping OK a destination "_pDest)
-        quit $$$OK
     } catch ex {
         set sc = $$$ERROR($$$GeneralError, "Ping SAP falló: "_ex.DisplayString())
-        quit sc
     }
+
+    quit sc
 }
 
 /// Logging helpers
@@ -163,10 +158,12 @@ ClassMethod LogInfo(msg As %String)
 {
     do $system.Event.Log("IRIS105.Util.SAPBootstrap", msg, "Info")
 }
+
 ClassMethod LogWarn(msg As %String)
 {
     do $system.Event.Log("IRIS105.Util.SAPBootstrap", msg, "Warning")
 }
+
 ClassMethod LogErr(msg As %String)
 {
     do $system.Event.Log("IRIS105.Util.SAPBootstrap", msg, "Error")
