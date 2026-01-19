@@ -2,10 +2,11 @@
 
 Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando IntegratedML en el namespace `MLTEST`, con API REST de scoring y una pagina CSP basica para demo rapida.
 
-## Estado del proyecto
+## Estado del proyecto (fin del sprint)
 - Listo: clases persistentes para pacientes, medicos, boxes, especialidades y citas; generador de datos sintetic (mock) y script de compilacion del paquete.
-- Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, runs de modelos y generacion de mock; pagina CSP `/csp/mltest/GCSP.Basic.cls` que consume la API.
+- Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, analytics y health check; pagina CSP `/csp/mltest/GCSP.Basic.cls` que consume la API.
 - Listo: plantillas SQL para el modelo IntegratedML (`sql/NoShow_model.sql`) y consultas de apoyo (`sql/demo_queries.sql`).
+- Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
 - Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
@@ -95,6 +96,9 @@ curl http://localhost:52773/csp/mltest/api/ml/stats/model
 curl -X POST http://localhost:52773/csp/mltest/api/ml/mock/generate \
   -H "Content-Type: application/json" \
   -d '{"months":3,"targetOccupancy":0.85,"patients":200}'
+
+# Health check sin token
+curl http://localhost:52773/csp/mltest/api/health
 ```
 
 ## UI CSP de demo
@@ -107,6 +111,7 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/mock/generate \
 - Trazas: los endpoints de analytics incluyen `debug` en la respuesta con pasos (`step=...`), el SQL y cada fila procesada (id, citas, noShow, tasa). Dejarlo activo para facilitar integracion y troubleshooting en el GPT.
 - Evitar `TOP ?` parametrizado: concatenar el limite en el SQL o cortar en memoria; algunas versiones de IRIS no soportan `TOP ?` y provocan errores de parseo/caché.
 - En caso de cambios de clase, recompilar y purgar cache de consultas: `Do $system.OBJ.Compile("IRIS105.REST.NoShowService","ck")` y `Do $SYSTEM.SQL.Purge()`.
+- Objetivo de despliegue: exponer la API como Actions para un Custom GPT, usando los endpoints anteriores (incluyendo `debug` en analytics) y el health check `/api/health` para verificaciones rapidas.
 
 ## Scripts y utilitarios
 - `scripts/compile_package.sh`: compila el paquete `IRIS105` dentro de un contenedor Docker (`./scripts/compile_package.sh iris MLTEST`).
