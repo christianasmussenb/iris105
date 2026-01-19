@@ -1,9 +1,41 @@
+Include %occErrors
+
 Class IRIS105.REST.NoShowService Extends %CSP.REST
 {
 
-// ##Include %occErrors
-
 Parameter DefaultModelName = "NoShowModel2";
+
+/// Validacion simple de Bearer token contra un Global
+ClassMethod OnPreDispatch() As %Status [ ProcedureBlock = 1, ServerOnly = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        // Allow unauthenticated health check
+        Set uri = $Get(%request.CgiEnvs("REQUEST_URI"))
+        If (uri["/api/health") {
+            Set tSC = $$$OK
+            Quit
+        }
+        Set hdr = %request.GetCgiEnv("HTTP_AUTHORIZATION")
+        Set token = ""
+        If $Extract(hdr,1,7)="Bearer " {
+            Set token = $Extract(hdr,8,*)
+        }
+        If token="" {
+            Do ..%SendAuthError("Missing bearer token")
+            Set tSC = $$$ERROR($$$GeneralError,"Missing bearer token")
+            Quit
+        }
+        If '$Data(^IRIS105("API","Tokens",token)) {
+            Do ..%SendAuthError("Invalid token")
+            Set tSC = $$$ERROR($$$GeneralError,"Invalid token")
+            Quit
+        }
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
 
 XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 {
@@ -13,6 +45,11 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/api/ml/stats/model" Method="GET" Call="ModelDetails"/>
     <Route Url="/api/ml/mock/generate" Method="POST" Call="GenerateMock"/>
     <Route Url="/api/ml/stats/lastAppointmentByPatient" Method="GET" Call="LastAppointmentByPatient"/>
+    <Route Url="/api/health" Method="GET" Call="Health"/>
+    <Route Url="/api/ml/analytics/busiest-day" Method="GET" Call="BusiestDay"/>
+    <Route Url="/api/ml/analytics/top-specialties" Method="GET" Call="TopSpecialties"/>
+    <Route Url="/api/ml/analytics/top-physicians" Method="GET" Call="TopPhysicians"/>
+    <Route Url="/api/ml/analytics/top-noshow" Method="GET" Call="TopNoShow"/>
 </Routes>
 }
 
@@ -101,7 +138,7 @@ ClassMethod ModelDetails() As %Status [ ProcedureBlock = 1 ]
     Quit $$$OK
 }
 
-/// Devuelve la última cita de un paciente y su score
+/// Devuelve la ultima cita de un paciente y su score
 ClassMethod LastAppointmentByPatient() As %Status [ ProcedureBlock = 1 ]
 {
     Set tSC = $$$OK
@@ -137,7 +174,7 @@ ClassMethod ScoreAppointment(pAppointmentId, Output pResult As %DynamicObject) A
     Quit ##class(IRIS105.Util.NoShowPredictor).ScoreAppointment(pAppointmentId, ..#DefaultModelName, "", .pResult)
 }
 
-/// Devuelve métricas básicas de las tablas y del modelo
+/// Devuelve metricas basicas de las tablas y del modelo
 ClassMethod StatsSummary() As %Status [ ProcedureBlock = 1 ]
 {
     Set tSC = $$$OK
@@ -155,7 +192,7 @@ ClassMethod StatsSummary() As %Status [ ProcedureBlock = 1 ]
     Quit $$$OK
 }
 
-/// Ejecuta la generación de datos mock (parámetros opcionales)
+/// Ejecuta la generacion de datos mock (parametros opcionales)
 ClassMethod GenerateMock() As %Status [ ProcedureBlock = 1 ]
 {
     Set tSC = $$$OK
@@ -284,6 +321,237 @@ ClassMethod %HandleError(pStatus As %Status) [ ProcedureBlock = 1 ]
     Do error.%Set("error", 1)
     Do error.%Set("message", $System.Status.GetErrorText(pStatus))
     Do ..%SendJSON(error, 400)
+}
+
+ClassMethod %SendSQLError(pStatus As %Status, pDetail As %String = "") [ ProcedureBlock = 1 ]
+{
+    Set obj = ##class(%DynamicObject).%New()
+    Do obj.%Set("error", 1)
+    Do obj.%Set("message", $System.Status.GetErrorText(pStatus))
+    If pDetail'="" Do obj.%Set("detail", pDetail)
+    Do ..%SendJSON(obj, 400)
+}
+
+ClassMethod %SendAuthError(pMessage As %String) [ ProcedureBlock = 1 ]
+{
+    Set %response.Status = 401
+    Set %response.ContentType = "application/json"
+    Set obj = ##class(%DynamicObject).%New()
+    Do obj.%Set("error", 1)
+    Do obj.%Set("message", pMessage)
+    Write obj.%ToJSON()
+}
+
+/// Dia con mas citas agendadas
+ClassMethod BusiestDay() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set sql = "SELECT TOP 1 TO_CHAR(StartDateTime,'YYYY-MM-DD') AS DayDate,"_
+                  " COUNT(*) AS Appointments"_ 
+                  " FROM IRIS105.Appointment"_ 
+                  " GROUP BY TO_CHAR(StartDateTime,'YYYY-MM-DD')"_ 
+                  " ORDER BY Appointments DESC, DayDate DESC"
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute()
+        Set resp = ##class(%DynamicObject).%New()
+        If rs.%Next() {
+            Do resp.%Set("date", rs.%Get("DayDate"))
+            Do resp.%Set("dayOfWeek", "")
+            Do resp.%Set("appointments", rs.%Get("Appointments"))
+        } Else {
+            Do resp.%Set("date","")
+            Do resp.%Set("dayOfWeek","")
+            Do resp.%Set("appointments",0)
+        }
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Especialidades con mas citas (y no-show)
+ClassMethod TopSpecialties() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set limit = ..%GetLimit(5)
+        Set sql = "SELECT TOP "_limit_" A.SpecialtyId AS specialtyId, COALESCE(S.Name,'') AS name,"_
+                  " COUNT(*) AS appointments,"_
+                  " SUM(CASE WHEN A.NoShow=1 THEN 1 ELSE 0 END) AS noShow"_ 
+                  " FROM IRIS105.Appointment A"_ 
+                  " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
+                  " GROUP BY A.SpecialtyId, S.Name"_ 
+                  " ORDER BY appointments DESC"
+        Set arr = ..%SelectToArray(sql,"specialtyId,name,appointments,noShow")
+        Set out = ##class(%DynamicObject).%New()
+        Do out.%Set("items", arr)
+        Do ..%SendJSON(out)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Medicos con mas citas (y no-show)
+ClassMethod TopPhysicians() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set limit = ..%GetLimit(5)
+        Set sql = "SELECT TOP "_limit_" A.PhysicianId AS physicianId,"_
+                  " COALESCE(P.FirstName||' '||P.LastName,'') AS name,"_
+                  " COUNT(*) AS appointments,"_
+                  " SUM(CASE WHEN A.NoShow=1 THEN 1 ELSE 0 END) AS noShow"_ 
+                  " FROM IRIS105.Appointment A"_ 
+                  " LEFT JOIN IRIS105.Physician P ON A.PhysicianId = P.PhysicianId"_ 
+                  " GROUP BY A.PhysicianId, P.FirstName, P.LastName"_ 
+                  " ORDER BY appointments DESC"
+        Set arr = ..%SelectToArray(sql,"physicianId,name,appointments,noShow")
+        Set out = ##class(%DynamicObject).%New()
+        Do out.%Set("items", arr)
+        Do ..%SendJSON(out)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Ranking de no-show por especialidad o medico
+ClassMethod TopNoShow() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set debug = ##class(%DynamicArray).%New()
+        Do debug.%Push("step=start")
+        Set rawBy = ..%QueryParam("by")
+        Set by = $ZCONVERT(rawBy,"L")
+        If (by'="physician")&&(by'="specialty") Set by = "specialty"
+        Do debug.%Push("step=by value="_by)
+        Set limit = ..%GetLimit(5)
+        Do debug.%Push("step=limit value="_limit)
+        If by="physician" {
+            Set sql = "SELECT A.PhysicianId AS id,"_
+                      " COALESCE(P.FirstName||' '||P.LastName,'') AS name,"_
+                      " COUNT(*) AS appointments,"_
+                      " SUM(CASE WHEN A.NoShow=1 THEN 1 ELSE 0 END) AS noShow"_ 
+                      " FROM IRIS105.Appointment A"_ 
+                      " LEFT JOIN IRIS105.Physician P ON A.PhysicianId = P.PhysicianId"_ 
+                      " GROUP BY A.PhysicianId, P.FirstName, P.LastName"_ 
+                      " ORDER BY appointments DESC"
+        } Else {
+            Set sql = "SELECT A.SpecialtyId AS id,"_
+                      " COALESCE(S.Name,'') AS name,"_
+                      " COUNT(*) AS appointments,"_
+                      " SUM(CASE WHEN A.NoShow=1 THEN 1 ELSE 0 END) AS noShow"_ 
+                      " FROM IRIS105.Appointment A"_ 
+                      " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
+                      " GROUP BY A.SpecialtyId, S.Name"_ 
+                      " ORDER BY appointments DESC"
+        }
+        Do debug.%Push("step=sql "_sql)
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        If $$$ISERR(tSC) {
+            Do debug.%Push("step=prepare error "_stmt.%Message)
+            Throw ##class(%Exception.StatusException).CreateFromStatus(tSC)
+        }
+        Do debug.%Push("step=execute")
+        Set rs = stmt.%Execute()
+        Set arr = ##class(%DynamicArray).%New()
+        Set pushed = 0
+        While rs.%Next() {
+            Set appt = rs.%Get("appointments")
+            Set ns = rs.%Get("noShow")
+            Set rate = $Select(appt>0:ns*1.0/appt,1:0)
+            Do debug.%Push("row id="_rs.%Get("id")_" appt="_appt_" ns="_ns_" rate="_rate)
+            Set row = ##class(%DynamicObject).%New()
+            Do row.%Set("id", rs.%Get("id"))
+            Do row.%Set("name", rs.%Get("name"))
+            Do row.%Set("appointments", appt)
+            Do row.%Set("noShow", ns)
+            Do row.%Set("noShowRate", rate)
+            Do arr.%Push(row)
+            Set pushed = pushed + 1
+            Quit:pushed>=limit
+        }
+        If arr.%Size()=0 {
+            Do debug.%Push("step=no rows")
+        }
+        Do debug.%Push("step=rows "_pushed)
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("by", by)
+        Do resp.%Set("items", arr)
+        Do resp.%Set("debug", debug)
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("error",1)
+        Do resp.%Set("message",$System.Status.GetErrorText(ex.AsStatus()))
+        If $IsObject(debug) Do resp.%Set("debug", debug)
+        Do ..%SendJSON(resp, 500)
+        Quit
+    }
+    Quit $$$OK
+}
+
+/// Health check basico
+ClassMethod Health() As %Status [ ProcedureBlock = 1 ]
+{
+    Set resp = ##class(%DynamicObject).%New()
+    Do resp.%Set("status","ok")
+    Do resp.%Set("service","IRIS105.REST.NoShowService")
+    Do resp.%Set("ts",$ZDATETIME($HOROLOG,3,1,3))
+    Do ..%SendJSON(resp)
+    Quit $$$OK
+}
+
+ClassMethod %GetLimit(pDefault As %Integer = 5, pMax As %Integer = 50) As %Integer
+{
+    Set limit = pDefault
+    Set val = ..%QueryParam("limit")
+    If val'="" {
+        Set val = +val
+        If val>0 Set limit = val
+    }
+    If limit>pMax Set limit = pMax
+    Quit limit
+}
+
+ClassMethod %QueryParam(pName As %String) As %String
+{
+    Set val = ""
+    If '$IsObject(%request) Quit val
+    Set bodyVal = $Get(%request.Data(pName))
+    If bodyVal'="" Quit bodyVal
+    Set qs = $Get(%request.CgiEnvs("QUERY_STRING"))
+    If qs="" Quit val
+    For i=1:1:$Length(qs,"&") {
+        Set pair = $Piece(qs,"&",i)
+        Set key = $Piece(pair,"=",1)
+        If $ZCONVERT(key,"L")=$ZCONVERT(pName,"L") {
+            Set val = $Piece(pair,"=",2)
+            Quit
+        }
+    }
+    Quit val
+}
+
+ClassMethod %DayName(pISODate As %String) As %String
+{
+    Quit ""
 }
 
 }
