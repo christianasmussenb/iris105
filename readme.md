@@ -10,6 +10,11 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
+## Avance reciente (sprint)
+- Nuevo endpoint `GET /api/ml/analytics/occupancy-weekly`: agrupación por specialty/box/physician, rango validado (default últimas 6 semanas), `slotsPerDay` configurable; week en formato `YYYY-Www`; probado contra el túnel.
+- OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con el endpoint de ocupación y esquema `OccupancyWeeklyResponse`; descripciones acotadas para Custom GPT.
+- Pendientes priorizados: endpoints `scheduled-patients`, `config/capacity`, `occupancy-trend`, `appointments/active`; definir capacidad realista (tabla/config) para que `occupancyRate` no supere 1 salvo sobrecupo; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
+
 ## Requisitos rapidos
 - InterSystems IRIS 2024.1 (local o contenedor).
 - Namespace `MLTEST` creado (ver ejemplo abajo).
