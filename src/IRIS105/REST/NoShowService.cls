@@ -50,6 +50,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/api/ml/analytics/top-specialties" Method="GET" Call="TopSpecialties"/>
     <Route Url="/api/ml/analytics/top-physicians" Method="GET" Call="TopPhysicians"/>
     <Route Url="/api/ml/analytics/top-noshow" Method="GET" Call="TopNoShow"/>
+    <Route Url="/api/ml/analytics/occupancy-weekly" Method="GET" Call="OccupancyWeekly"/>
 </Routes>
 }
 
@@ -518,6 +519,87 @@ ClassMethod Health() As %Status [ ProcedureBlock = 1 ]
     Quit $$$OK
 }
 
+/// Ocupacion semanal por especialidad, box o medico
+ClassMethod OccupancyWeekly() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        // Parametros
+        Set groupBy = ..%NormalizeGroupBy(..%QueryParam("groupBy"))
+        Set slotsPerDay = ..%IntegerParam("slotsPerDay", 8, 1, 200)
+        Set startDate = ..%QueryParam("startDate")
+        Set endDate = ..%QueryParam("endDate")
+        Set tSC = ..%BuildDateRange(startDate, endDate, .fromTs, .toTs, .rangeObj)
+        Quit:$$$ISERR(tSC)
+        
+        // Factor por grupo (ej: cantidad de medicos por especialidad)
+        Set factorMap = ..%BuildCapacityFactor(groupBy)
+        
+        // Query agregada por dia para permitir semanas parciales
+        Set sql = ..%OccupancySQL(groupBy)
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(fromTs, toTs)
+        
+        Kill stats
+        While rs.%Next() {
+            Set gid = rs.%Get("GroupId")
+            Set gname = rs.%Get("GroupName")
+            Set booked = +rs.%Get("Booked")
+            Set weekLbl = ..%FormatWeek(rs.%Get("WeekYear"), rs.%Get("WeekNum"))
+            If (weekLbl="")!(gid="") {
+                // skip invalid rows
+                Continue
+            }
+            Set stats(weekLbl,gid,"name") = gname
+            Set stats(weekLbl,gid,"booked") = $Get(stats(weekLbl,gid,"booked")) + booked
+            Set factor = $Select(factorMap.%IsDefined(gid):factorMap.%Get(gid),1:1)
+            Set capDay = slotsPerDay * factor
+            Set stats(weekLbl,gid,"capacity") = $Get(stats(weekLbl,gid,"capacity")) + capDay
+        }
+        
+        // Construir respuesta ordenada
+        Set weeks = ##class(%DynamicArray).%New()
+        Set weekLbl = ""
+        For {
+            Set weekLbl = $Order(stats(weekLbl))
+            Quit:weekLbl=""
+            Set wobj = ##class(%DynamicObject).%New()
+            Do wobj.%Set("week", weekLbl)
+            Do wobj.%Set("items", ##class(%DynamicArray).%New())
+            Set gid = ""
+            For {
+                Set gid = $Order(stats(weekLbl,gid))
+                Quit:gid=""
+                Set item = ##class(%DynamicObject).%New()
+                Do item.%Set("id", gid)
+                Do item.%Set("name", $Get(stats(weekLbl,gid,"name")))
+                Set cap = $Get(stats(weekLbl,gid,"capacity"),0)
+                Set booked = $Get(stats(weekLbl,gid,"booked"),0)
+                Do item.%Set("capacity", cap)
+                Do item.%Set("booked", booked)
+                Do item.%Set("occupancyRate", $Select(cap>0:booked*1.0/cap,1:0))
+                Do wobj.items.%Push(item)
+            }
+            Do weeks.%Push(wobj)
+        }
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("groupBy", groupBy)
+        If $IsObject(rangeObj) Do resp.%Set("dateRange", rangeObj)
+        Do resp.%Set("slotsPerDay", slotsPerDay)
+        Do resp.%Set("weeks", weeks)
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
 ClassMethod %GetLimit(pDefault As %Integer = 5, pMax As %Integer = 50) As %Integer
 {
     Set limit = pDefault
@@ -552,6 +634,114 @@ ClassMethod %QueryParam(pName As %String) As %String
 ClassMethod %DayName(pISODate As %String) As %String
 {
     Quit ""
+}
+
+ClassMethod %FormatWeek(pYear As %Integer, pWeek As %Integer) As %String
+{
+    Set y = +pYear
+    Set w = +pWeek
+    If (y=0)!(w=0) Quit ""
+    If w<10 Set w = "0"_w
+    Quit y_"-W"_w
+}
+
+ClassMethod %FormatWeekFromDate(pISODate As %String) As %String
+{
+    Set h = $ZDATEH(pISODate,3)
+    If h<0 Quit ""
+    Quit $ZDATE(h,8)
+}
+
+ClassMethod %NormalizeGroupBy(pValue As %String = "") As %String
+{
+    Set grp = $ZCONVERT($Get(pValue),"L")
+    If (grp'="physician")&&(grp'="box")&&(grp'="specialty") {
+        Set grp = "specialty"
+    }
+    Quit grp
+}
+
+ClassMethod %IntegerParam(pName As %String, pDefault As %Integer, pMin As %Integer = 1, pMax As %Integer = 999) As %Integer
+{
+    Set raw = ..%QueryParam(pName)
+    If raw="" Quit pDefault
+    Set num = +raw
+    If num<pMin Set num = pMin
+    If num>pMax Set num = pMax
+    Quit num
+}
+
+ClassMethod %BuildDateRange(pStart As %String, pEnd As %String, Output pStartTS As %String, Output pEndTS As %String, Output pRangeObj As %DynamicObject) As %Status
+{
+    #include %occErrors
+    Set today = $ZDATE($HOROLOG,3)
+    Set defaultStart = $ZDATE($HOROLOG-42,3)
+    Set start = $Select(pStart'="":pStart, 1:defaultStart)
+    Set end = $Select(pEnd'="":pEnd, 1:today)
+    
+    Set sh = $ZDATEH(start,3)
+    If sh<0 Quit $$$ERROR($$$GeneralError,"Invalid startDate (expected YYYY-MM-DD)")
+    Set eh = $ZDATEH(end,3)
+    If eh<0 Quit $$$ERROR($$$GeneralError,"Invalid endDate (expected YYYY-MM-DD)")
+    If eh<sh Quit $$$ERROR($$$GeneralError,"endDate must be greater than or equal to startDate")
+    If (eh-sh)>365 Quit $$$ERROR($$$GeneralError,"Date range too large (max 365 days)")
+    
+    Set pStartTS = start_" 00:00:00"
+    Set pEndTS = end_" 23:59:59"
+    Set pRangeObj = ##class(%DynamicObject).%New()
+    Do pRangeObj.%Set("startDate", start)
+    Do pRangeObj.%Set("endDate", end)
+    Quit $$$OK
+}
+
+ClassMethod %BuildCapacityFactor(pGroupBy As %String) As %DynamicObject
+{
+    Set map = ##class(%DynamicObject).%New()
+    If pGroupBy="specialty" {
+        Set stmt = ##class(%SQL.Statement).%New()
+        If $$$ISOK(stmt.%Prepare("SELECT SpecialtyId, COUNT(*) AS PhysicianCount FROM IRIS105.Physician GROUP BY SpecialtyId")) {
+            Set rs = stmt.%Execute()
+            While rs.%Next() {
+                Do map.%Set(rs.%Get("SpecialtyId"), $Select(rs.%Get("PhysicianCount")>0:rs.%Get("PhysicianCount"),1:1))
+            }
+        }
+    }
+    Quit map
+}
+
+ClassMethod %OccupancySQL(pGroupBy As %String) As %String
+{
+    If pGroupBy="box" {
+        Quit "SELECT YEAR(A.StartDateTime) AS WeekYear,"_
+             " DATEPART('week',A.StartDateTime) AS WeekNum,"_
+             " A.BoxId AS GroupId, COALESCE(B.Name,'') AS GroupName,"_
+             " COUNT(*) AS Booked"_
+             " FROM IRIS105.Appointment A"_ 
+             " LEFT JOIN IRIS105.Box B ON A.BoxId = B.BoxId"_ 
+             " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+             " GROUP BY YEAR(A.StartDateTime), DATEPART('week',A.StartDateTime), A.BoxId, COALESCE(B.Name,'')"_
+             " ORDER BY WeekYear, WeekNum, GroupId"
+    } ElseIf pGroupBy="physician" {
+        Quit "SELECT YEAR(A.StartDateTime) AS WeekYear,"_
+             " DATEPART('week',A.StartDateTime) AS WeekNum,"_
+             " A.PhysicianId AS GroupId, COALESCE(P.FirstName||' '||P.LastName,'') AS GroupName,"_
+             " COUNT(*) AS Booked"_
+             " FROM IRIS105.Appointment A"_ 
+             " LEFT JOIN IRIS105.Physician P ON A.PhysicianId = P.PhysicianId"_ 
+             " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+             " GROUP BY YEAR(A.StartDateTime), DATEPART('week',A.StartDateTime), A.PhysicianId, COALESCE(P.FirstName||' '||P.LastName,'')"_
+             " ORDER BY WeekYear, WeekNum, GroupId"
+    } Else {
+        Quit "SELECT YEAR(A.StartDateTime) AS WeekYear,"_
+             " DATEPART('week',A.StartDateTime) AS WeekNum,"_
+             " A.SpecialtyId AS GroupId, COALESCE(S.Name,'') AS GroupName,"_
+             " COUNT(*) AS Booked"_
+             " FROM IRIS105.Appointment A"_ 
+             " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
+             " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+             " GROUP BY YEAR(A.StartDateTime), DATEPART('week',A.StartDateTime), A.SpecialtyId, COALESCE(S.Name,'')"_
+             " ORDER BY WeekYear, WeekNum, GroupId"
+    }
 }
 
 }

@@ -214,6 +214,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TopNoShowError'
+  /api/ml/analytics/occupancy-weekly:
+    get:
+      operationId: occupancyWeekly
+      summary: Ocupación semanal por especialidad, box o médico
+      description: >
+        Ocupación heurística semanal. Capacidad por día = `slotsPerDay` (default 8) x 1 (box/physician)
+        o x médicos de la especialidad. Rango por defecto: últimas 6 semanas. `week` es ISO `YYYY-Www`.
+        `occupancyRate` puede ser >1 si la capacidad estimada es menor al volumen real.
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha inicio (YYYY-MM-DD). Default: hoy - 42 días."
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha fin (YYYY-MM-DD). Default: hoy."
+        - name: groupBy
+          in: query
+          schema:
+            type: string
+            enum: [specialty, box, physician]
+          description: Criterio de agrupación (default `specialty`)
+        - name: slotsPerDay
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 8
+          description: Capacidad base por día usada en el cálculo
+      responses:
+        "200":
+          description: Ocupación semanal agregada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccupancyWeeklyResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -604,3 +648,46 @@ components:
           example: 1
         message:
           type: string
+    OccupancyWeeklyResponse:
+      type: object
+      properties:
+        groupBy:
+          type: string
+          enum: [specialty, box, physician]
+        dateRange:
+          type: object
+          properties:
+            startDate:
+              type: string
+              format: date
+            endDate:
+              type: string
+              format: date
+        slotsPerDay:
+          type: integer
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              week:
+                type: string
+                description: Semana ISO en formato YYYY-Www
+                example: "2026-W01"
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    capacity:
+                      type: number
+                    booked:
+                      type: number
+                    occupancyRate:
+                      type: number
+                      format: double
+                      description: Puede ser >1 si la capacidad heurística es menor al volumen real
