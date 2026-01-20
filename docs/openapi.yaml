@@ -258,6 +258,173 @@ paths:
                 $ref: '#/components/schemas/OccupancyWeeklyResponse'
         "400":
           $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/scheduled-patients:
+    get:
+      operationId: scheduledPatients
+      summary: Citas agendadas con filtros por box, especialidad o nombre
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha inicio (YYYY-MM-DD). Default: hoy - 42 días."
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha fin (YYYY-MM-DD). Default: hoy."
+        - name: specialtyId
+          in: query
+          schema:
+            type: string
+          description: ID de especialidad a filtrar
+        - name: boxId
+          in: query
+          schema:
+            type: string
+          description: ID de box a filtrar
+        - name: patientName
+          in: query
+          schema:
+            type: string
+          description: Parte del nombre del paciente (contiene)
+        - name: physicianName
+          in: query
+          schema:
+            type: string
+          description: Parte del nombre del médico (contiene)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+          description: Límite de ítems a retornar (máximo 500)
+      responses:
+        "200":
+          description: Citas agendadas con filtros aplicados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledPatientsResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/occupancy-trend:
+    get:
+      operationId: occupancyTrend
+      summary: Ocupación semanal agregada para las últimas N semanas
+      parameters:
+        - name: weeks
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 52
+            default: 6
+          description: Número de semanas a considerar (desde endDate)
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha fin (YYYY-MM-DD). Default: hoy."
+        - name: slotsPerDay
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 8
+          description: Capacidad base por día usada en el cálculo
+      responses:
+        "200":
+          description: Tendencia semanal de ocupación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OccupancyTrendResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/appointments/active:
+    get:
+      operationId: activeAppointments
+      summary: Citas activas en un rango de fechas
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha inicio (YYYY-MM-DD). Default: hoy."
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Fecha fin (YYYY-MM-DD). Default: hoy + 30 días."
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+          description: Límite de ítems a retornar (máximo 1000)
+      responses:
+        "200":
+          description: Citas activas dentro del rango solicitado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveAppointmentsResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/config/capacity:
+    get:
+      operationId: capacityConfigList
+      summary: Configuración de capacidad por box/especialidad/médico
+      parameters:
+        - name: groupBy
+          in: query
+          schema:
+            type: string
+            enum: [specialty, box, physician]
+          description: Tipo de entidad a filtrar
+        - name: id
+          in: query
+          schema:
+            type: string
+          description: ID específico a filtrar
+      responses:
+        "200":
+          description: Lista de configuraciones de capacidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacityConfigResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      operationId: capacityConfigUpsert
+      summary: Guardar configuración de capacidad por entidad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CapacityConfigRequest'
+      responses:
+        "200":
+          description: Configuración guardada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapacityConfigResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -691,3 +858,139 @@ components:
                       type: number
                       format: double
                       description: Puede ser >1 si la capacidad heurística es menor al volumen real
+    ScheduledPatientsResponse:
+      type: object
+      properties:
+        filters:
+          type: object
+          properties:
+            specialtyId:
+              type: string
+            boxId:
+              type: string
+            patientName:
+              type: string
+            physicianName:
+              type: string
+        dateRange:
+          type: object
+          properties:
+            startDate:
+              type: string
+              format: date
+            endDate:
+              type: string
+              format: date
+        limit:
+          type: integer
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppointmentSummaryItem'
+    ActiveAppointmentsResponse:
+      type: object
+      properties:
+        dateRange:
+          type: object
+          properties:
+            startDate:
+              type: string
+              format: date
+            endDate:
+              type: string
+              format: date
+        limit:
+          type: integer
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppointmentSummaryItem'
+    AppointmentSummaryItem:
+      type: object
+      properties:
+        appointmentId:
+          type: string
+        startDateTime:
+          type: string
+        endDateTime:
+          type: string
+        patientId:
+          type: string
+        patientName:
+          type: string
+        physicianId:
+          type: string
+        physicianName:
+          type: string
+        boxId:
+          type: string
+        boxName:
+          type: string
+        specialtyId:
+          type: string
+        specialtyName:
+          type: string
+        noShow:
+          type: integer
+    OccupancyTrendResponse:
+      type: object
+      properties:
+        weeks:
+          type: array
+          items:
+            type: object
+            properties:
+              week:
+                type: string
+                example: "2026-W01"
+              booked:
+                type: number
+              capacity:
+                type: number
+              occupancyRate:
+                type: number
+                format: double
+        weeksCount:
+          type: integer
+        slotsPerDay:
+          type: integer
+        dateRange:
+          type: object
+          properties:
+            startDate:
+              type: string
+              format: date
+            endDate:
+              type: string
+              format: date
+    CapacityConfigRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CapacityConfigItem'
+      required: [items]
+    CapacityConfigResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CapacityConfigItem'
+        count:
+          type: integer
+    CapacityConfigItem:
+      type: object
+      properties:
+        groupBy:
+          type: string
+          enum: [specialty, box, physician]
+        id:
+          type: string
+        slotsPerDay:
+          type: integer

@@ -13,7 +13,7 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 ## Avance reciente (sprint)
 - Nuevo endpoint `GET /api/ml/analytics/occupancy-weekly`: agrupación por specialty/box/physician, rango validado (default últimas 6 semanas), `slotsPerDay` configurable; week en formato `YYYY-Www`; probado contra el túnel.
 - OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con el endpoint de ocupación y esquema `OccupancyWeeklyResponse`; descripciones acotadas para Custom GPT.
-- Pendientes priorizados: endpoints `scheduled-patients`, `config/capacity`, `occupancy-trend`, `appointments/active`; definir capacidad realista (tabla/config) para que `occupancyRate` no supere 1 salvo sobrecupo; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
+- Pendientes priorizados: definir capacidad realista (tabla/config) para que `occupancyRate` no supere 1 salvo sobrecupo; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
 
 ## Requisitos rapidos
 - InterSystems IRIS 2024.1 (local o contenedor).
@@ -67,6 +67,11 @@ Do ##class(IRIS105.Util.MockData).Generate()
 - `GET /api/ml/analytics/top-specialties?limit=5`: ranking de especialidades por citas/no-show.
 - `GET /api/ml/analytics/top-physicians?limit=5`: ranking de medicos por citas/no-show.
 - `GET /api/ml/analytics/top-noshow?by=physician|specialty&limit=5`: ranking por tasa de no-show.
+- `GET /api/ml/analytics/occupancy-weekly`: ocupacion semanal por grupo.
+- `GET /api/ml/analytics/scheduled-patients`: citas agendadas con filtros por box/especialidad/nombres.
+- `GET /api/ml/analytics/occupancy-trend`: ocupacion semanal agregada (ultimas N semanas).
+- `GET /api/ml/appointments/active`: citas activas en un rango de fechas.
+- `GET|POST /api/ml/config/capacity`: capacidad base por box/especialidad/medico.
 - `GET /api/health`: health check simple del servicio REST.
 
 Ejemplos:
@@ -121,6 +126,7 @@ curl http://localhost:52773/csp/mltest/api/health
 ## Scripts y utilitarios
 - `scripts/compile_package.sh`: compila el paquete `IRIS105` dentro de un contenedor Docker (`./scripts/compile_package.sh iris MLTEST`).
 - `IRIS105.Util.WebAppSetup`: crea/actualiza las Web Applications REST y CSP (`ConfigureAll` o `Upsert`).
+- `IRIS105.Util.ProjectSetup`: inicializa globals del proyecto (tokens y capacidad base) con `Init`.
 
 ## Documentacion relacionada
 - `docs/arquitectura.md`: vision funcional del POC y flujos.

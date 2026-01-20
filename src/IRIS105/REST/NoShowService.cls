@@ -51,6 +51,11 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/api/ml/analytics/top-physicians" Method="GET" Call="TopPhysicians"/>
     <Route Url="/api/ml/analytics/top-noshow" Method="GET" Call="TopNoShow"/>
     <Route Url="/api/ml/analytics/occupancy-weekly" Method="GET" Call="OccupancyWeekly"/>
+    <Route Url="/api/ml/analytics/scheduled-patients" Method="GET" Call="ScheduledPatients"/>
+    <Route Url="/api/ml/analytics/occupancy-trend" Method="GET" Call="OccupancyTrend"/>
+    <Route Url="/api/ml/appointments/active" Method="GET" Call="ActiveAppointments"/>
+    <Route Url="/api/ml/config/capacity" Method="GET" Call="CapacityConfig"/>
+    <Route Url="/api/ml/config/capacity" Method="POST" Call="CapacityConfig"/>
 </Routes>
 }
 
@@ -600,7 +605,320 @@ ClassMethod OccupancyWeekly() As %Status [ ProcedureBlock = 1 ]
     Quit $$$OK
 }
 
+/// Pacientes agendados con filtros basicos
+ClassMethod ScheduledPatients() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set specialtyId = ..%QueryParam("specialtyId")
+        Set boxId = ..%QueryParam("boxId")
+        Set patientName = ..%QueryParam("patientName")
+        Set physicianName = ..%QueryParam("physicianName")
+        Set limit = ..%GetListLimit(100, 500)
+        Set tSC = ..%BuildDateRange(..%QueryParam("startDate"), ..%QueryParam("endDate"), .fromTs, .toTs, .rangeObj)
+        Quit:$$$ISERR(tSC)
+        
+        Set patientName = $ZCONVERT(patientName,"U")
+        Set physicianName = $ZCONVERT(physicianName,"U")
+        Set patientLike = $Select(patientName'="":"%"_patientName_"%",1:"")
+        Set physicianLike = $Select(physicianName'="":"%"_physicianName_"%",1:"")
+        
+        Set sql = "SELECT TOP "_limit_" A.AppointmentId,"_
+                  " A.StartDateTime, A.EndDateTime,"_
+                  " A.PatientId, COALESCE(P.FirstName||' '||P.LastName,'') AS PatientName,"_
+                  " A.PhysicianId, COALESCE(Ph.FirstName||' '||Ph.LastName,'') AS PhysicianName,"_
+                  " A.BoxId, COALESCE(B.Name,'') AS BoxName,"_
+                  " A.SpecialtyId, COALESCE(S.Name,'') AS SpecialtyName,"_
+                  " A.NoShow"_ 
+                  " FROM IRIS105.Appointment A"_ 
+                  " LEFT JOIN IRIS105.Patient P ON A.PatientId = P.PatientId"_ 
+                  " LEFT JOIN IRIS105.Physician Ph ON A.PhysicianId = Ph.PhysicianId"_ 
+                  " LEFT JOIN IRIS105.Box B ON A.BoxId = B.BoxId"_ 
+                  " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
+                  " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+                  " AND (?='' OR A.SpecialtyId=?)"_ 
+                  " AND (?='' OR A.BoxId=?)"_ 
+                  " AND (?='' OR UPPER(COALESCE(P.FirstName||' '||P.LastName,'')) LIKE ?)"_ 
+                  " AND (?='' OR UPPER(COALESCE(Ph.FirstName||' '||Ph.LastName,'')) LIKE ?)"_ 
+                  " ORDER BY A.StartDateTime ASC"
+        
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(fromTs, toTs, specialtyId, specialtyId, boxId, boxId, patientName, patientLike, physicianName, physicianLike)
+        
+        Set items = ##class(%DynamicArray).%New()
+        While rs.%Next() {
+            Set row = ##class(%DynamicObject).%New()
+            Do row.%Set("appointmentId", rs.%Get("AppointmentId"))
+            Do row.%Set("startDateTime", rs.%Get("StartDateTime"))
+            Do row.%Set("endDateTime", rs.%Get("EndDateTime"))
+            Do row.%Set("patientId", rs.%Get("PatientId"))
+            Do row.%Set("patientName", rs.%Get("PatientName"))
+            Do row.%Set("physicianId", rs.%Get("PhysicianId"))
+            Do row.%Set("physicianName", rs.%Get("PhysicianName"))
+            Do row.%Set("boxId", rs.%Get("BoxId"))
+            Do row.%Set("boxName", rs.%Get("BoxName"))
+            Do row.%Set("specialtyId", rs.%Get("SpecialtyId"))
+            Do row.%Set("specialtyName", rs.%Get("SpecialtyName"))
+            Do row.%Set("noShow", rs.%Get("NoShow"))
+            Do items.%Push(row)
+        }
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("filters", ##class(%DynamicObject).%New())
+        Do resp.filters.%Set("specialtyId", specialtyId)
+        Do resp.filters.%Set("boxId", boxId)
+        Do resp.filters.%Set("patientName", ..%QueryParam("patientName"))
+        Do resp.filters.%Set("physicianName", ..%QueryParam("physicianName"))
+        Do resp.%Set("dateRange", rangeObj)
+        Do resp.%Set("limit", limit)
+        Do resp.%Set("items", items)
+        Do resp.%Set("count", items.%Size())
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Ocupacion semanal agregada para las ultimas N semanas
+ClassMethod OccupancyTrend() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set weeks = ..%IntegerParam("weeks", 6, 1, 52)
+        Set slotsPerDay = ..%IntegerParam("slotsPerDay", 8, 1, 200)
+        Set endDate = ..%QueryParam("endDate")
+        If endDate="" Set endDate = $ZDATE($HOROLOG,3)
+        Set endH = $ZDATEH(endDate,3)
+        If endH<0 {
+            Set tSC = $$$ERROR($$$GeneralError,"Invalid endDate (expected YYYY-MM-DD)")
+            Quit
+        }
+        Set startDate = $ZDATE(endH-((weeks*7)-1),3)
+        Set tSC = ..%BuildDateRange(startDate, endDate, .fromTs, .toTs, .rangeObj)
+        Quit:$$$ISERR(tSC)
+        
+        Set sql = "SELECT YEAR(A.StartDateTime) AS WeekYear,"_
+                  " DATEPART('week',A.StartDateTime) AS WeekNum,"_
+                  " COUNT(*) AS Booked"_ 
+                  " FROM IRIS105.Appointment A"_ 
+                  " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+                  " GROUP BY YEAR(A.StartDateTime), DATEPART('week',A.StartDateTime)"_ 
+                  " ORDER BY WeekYear, WeekNum"
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(fromTs, toTs)
+        
+        Set weeksArr = ##class(%DynamicArray).%New()
+        While rs.%Next() {
+            Set weekLbl = ..%FormatWeek(rs.%Get("WeekYear"), rs.%Get("WeekNum"))
+            If weekLbl="" Continue
+            Set booked = +rs.%Get("Booked")
+            Set cap = slotsPerDay * 7
+            Set row = ##class(%DynamicObject).%New()
+            Do row.%Set("week", weekLbl)
+            Do row.%Set("booked", booked)
+            Do row.%Set("capacity", cap)
+            Do row.%Set("occupancyRate", $Select(cap>0:booked*1.0/cap,1:0))
+            Do weeksArr.%Push(row)
+        }
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("weeks", weeksArr)
+        Do resp.%Set("weeksCount", weeks)
+        Do resp.%Set("slotsPerDay", slotsPerDay)
+        Do resp.%Set("dateRange", rangeObj)
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Citas activas en un rango de fechas (base para otros analytics)
+ClassMethod ActiveAppointments() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set limit = ..%GetListLimit(200, 1000)
+        Set startDate = ..%QueryParam("startDate")
+        Set endDate = ..%QueryParam("endDate")
+        If startDate="" Set startDate = $ZDATE($HOROLOG,3)
+        If endDate="" Set endDate = $ZDATE($HOROLOG+30,3)
+        Set tSC = ..%BuildDateRange(startDate, endDate, .fromTs, .toTs, .rangeObj)
+        Quit:$$$ISERR(tSC)
+        
+        Set sql = "SELECT TOP "_limit_" A.AppointmentId,"_
+                  " A.StartDateTime, A.EndDateTime,"_
+                  " A.PatientId, COALESCE(P.FirstName||' '||P.LastName,'') AS PatientName,"_
+                  " A.PhysicianId, COALESCE(Ph.FirstName||' '||Ph.LastName,'') AS PhysicianName,"_
+                  " A.BoxId, COALESCE(B.Name,'') AS BoxName,"_
+                  " A.SpecialtyId, COALESCE(S.Name,'') AS SpecialtyName,"_
+                  " A.NoShow"_ 
+                  " FROM IRIS105.Appointment A"_ 
+                  " LEFT JOIN IRIS105.Patient P ON A.PatientId = P.PatientId"_ 
+                  " LEFT JOIN IRIS105.Physician Ph ON A.PhysicianId = Ph.PhysicianId"_ 
+                  " LEFT JOIN IRIS105.Box B ON A.BoxId = B.BoxId"_ 
+                  " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
+                  " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
+                  " ORDER BY A.StartDateTime ASC"
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(fromTs, toTs)
+        
+        Set items = ##class(%DynamicArray).%New()
+        While rs.%Next() {
+            Set row = ##class(%DynamicObject).%New()
+            Do row.%Set("appointmentId", rs.%Get("AppointmentId"))
+            Do row.%Set("startDateTime", rs.%Get("StartDateTime"))
+            Do row.%Set("endDateTime", rs.%Get("EndDateTime"))
+            Do row.%Set("patientId", rs.%Get("PatientId"))
+            Do row.%Set("patientName", rs.%Get("PatientName"))
+            Do row.%Set("physicianId", rs.%Get("PhysicianId"))
+            Do row.%Set("physicianName", rs.%Get("PhysicianName"))
+            Do row.%Set("boxId", rs.%Get("BoxId"))
+            Do row.%Set("boxName", rs.%Get("BoxName"))
+            Do row.%Set("specialtyId", rs.%Get("SpecialtyId"))
+            Do row.%Set("specialtyName", rs.%Get("SpecialtyName"))
+            Do row.%Set("noShow", rs.%Get("NoShow"))
+            Do items.%Push(row)
+        }
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("dateRange", rangeObj)
+        Do resp.%Set("limit", limit)
+        Do resp.%Set("items", items)
+        Do resp.%Set("count", items.%Size())
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Configuracion de capacidad por box/especialidad/medico
+ClassMethod CapacityConfig() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        If %request.Method="POST" {
+            Set payload = ..%ReadJSONBody()
+            If '$IsObject(payload) {
+                Set tSC = $$$ERROR($$$GeneralError,"Invalid JSON body")
+                Quit
+            }
+            Set items = payload.%Get("items")
+            If '$IsObject(items) {
+                Set tSC = $$$ERROR($$$GeneralError,"items array is required")
+                Quit
+            }
+            Set saved = ##class(%DynamicArray).%New()
+            For i=0:1:items.%Size()-1 {
+                Set item = items.%Get(i)
+                If '$IsObject(item) Continue
+                Set groupBy = ""
+                If item.%IsDefined("groupBy") {
+                    Set groupBy = ..%NormalizeGroupByStrict(item.%Get("groupBy"))
+                }
+                Set id = item.%Get("id")
+                Set slots = +item.%Get("slotsPerDay")
+                If (groupBy="")!(id="")!(slots<=0) Continue
+                Set ^IRIS105("Capacity",groupBy,id) = slots
+                Set row = ##class(%DynamicObject).%New()
+                Do row.%Set("groupBy", groupBy)
+                Do row.%Set("id", id)
+                Do row.%Set("slotsPerDay", slots)
+                Do saved.%Push(row)
+            }
+            Set resp = ##class(%DynamicObject).%New()
+            Do resp.%Set("items", saved)
+            Do resp.%Set("count", saved.%Size())
+            Do ..%SendJSON(resp)
+        } Else {
+            Set groupBy = ""
+            Set rawGroup = ..%QueryParam("groupBy")
+            If rawGroup'="" Set groupBy = ..%NormalizeGroupByStrict(rawGroup)
+            Set id = ..%QueryParam("id")
+            Set items = ##class(%DynamicArray).%New()
+            If groupBy'="" {
+                If id'="" {
+                    Set slots = $Get(^IRIS105("Capacity",groupBy,id))
+                    If slots'="" {
+                        Set row = ##class(%DynamicObject).%New()
+                        Do row.%Set("groupBy", groupBy)
+                        Do row.%Set("id", id)
+                        Do row.%Set("slotsPerDay", +slots)
+                        Do items.%Push(row)
+                    }
+                } Else {
+                    Set gid = ""
+                    For {
+                        Set gid = $Order(^IRIS105("Capacity",groupBy,gid))
+                        Quit:gid=""
+                        Set row = ##class(%DynamicObject).%New()
+                        Do row.%Set("groupBy", groupBy)
+                        Do row.%Set("id", gid)
+                        Do row.%Set("slotsPerDay", +$Get(^IRIS105("Capacity",groupBy,gid)))
+                        Do items.%Push(row)
+                    }
+                }
+            } Else {
+                Set grp = ""
+                For {
+                    Set grp = $Order(^IRIS105("Capacity",grp))
+                    Quit:grp=""
+                    Set gid = ""
+                    For {
+                        Set gid = $Order(^IRIS105("Capacity",grp,gid))
+                        Quit:gid=""
+                        Set row = ##class(%DynamicObject).%New()
+                        Do row.%Set("groupBy", grp)
+                        Do row.%Set("id", gid)
+                        Do row.%Set("slotsPerDay", +$Get(^IRIS105("Capacity",grp,gid)))
+                        Do items.%Push(row)
+                    }
+                }
+            }
+            Set resp = ##class(%DynamicObject).%New()
+            Do resp.%Set("items", items)
+            Do resp.%Set("count", items.%Size())
+            Do ..%SendJSON(resp)
+        }
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
 ClassMethod %GetLimit(pDefault As %Integer = 5, pMax As %Integer = 50) As %Integer
+{
+    Set limit = pDefault
+    Set val = ..%QueryParam("limit")
+    If val'="" {
+        Set val = +val
+        If val>0 Set limit = val
+    }
+    If limit>pMax Set limit = pMax
+    Quit limit
+}
+
+ClassMethod %GetListLimit(pDefault As %Integer = 100, pMax As %Integer = 500) As %Integer
 {
     Set limit = pDefault
     Set val = ..%QueryParam("limit")
@@ -659,6 +977,13 @@ ClassMethod %NormalizeGroupBy(pValue As %String = "") As %String
         Set grp = "specialty"
     }
     Quit grp
+}
+
+ClassMethod %NormalizeGroupByStrict(pValue As %String = "") As %String
+{
+    Set grp = $ZCONVERT($Get(pValue),"L")
+    If (grp="physician")!(grp="box")!(grp="specialty") Quit grp
+    Quit ""
 }
 
 ClassMethod %IntegerParam(pName As %String, pDefault As %Integer, pMin As %Integer = 1, pMax As %Integer = 999) As %Integer
