@@ -219,8 +219,9 @@ paths:
       operationId: occupancyWeekly
       summary: Ocupación semanal por especialidad, box o médico
       description: >
-        Ocupación heurística semanal. Capacidad por día = `slotsPerDay` (default 8) x 1 (box/physician)
-        o x médicos de la especialidad. Rango por defecto: últimas 6 semanas. `week` es ISO `YYYY-Www`.
+        Ocupación heurística semanal. Capacidad por día = `slotsPerDay` (default 8) x 3 pacientes/hora x factor
+        (1 para box/physician, o cantidad de médicos por especialidad). Rango por defecto: últimas 6 semanas.
+        `week` es ISO `YYYY-Www`.
         `occupancyRate` puede ser >1 si la capacidad estimada es menor al volumen real.
       parameters:
         - name: startDate

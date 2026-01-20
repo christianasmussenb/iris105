@@ -560,7 +560,8 @@ ClassMethod OccupancyWeekly() As %Status [ ProcedureBlock = 1 ]
             Set stats(weekLbl,gid,"name") = gname
             Set stats(weekLbl,gid,"booked") = $Get(stats(weekLbl,gid,"booked")) + booked
             Set factor = $Select(factorMap.%IsDefined(gid):factorMap.%Get(gid),1:1)
-            Set capDay = slotsPerDay * factor
+            // 3 pacientes por hora por box/dia; slotsPerDay representa horas/dia
+            Set capDay = (slotsPerDay*3) * factor
             Set stats(weekLbl,gid,"capacity") = $Get(stats(weekLbl,gid,"capacity")) + capDay
         }
         
@@ -615,6 +616,7 @@ ClassMethod ScheduledPatients() As %Status [ ProcedureBlock = 1 ]
         Set patientName = ..%QueryParam("patientName")
         Set physicianName = ..%QueryParam("physicianName")
         Set limit = ..%GetListLimit(100, 500)
+        Set debugFlag = ($ZCONVERT(..%QueryParam("debug"),"L")="1")
         Set tSC = ..%BuildDateRange(..%QueryParam("startDate"), ..%QueryParam("endDate"), .fromTs, .toTs, .rangeObj)
         Quit:$$$ISERR(tSC)
         
@@ -635,19 +637,20 @@ ClassMethod ScheduledPatients() As %Status [ ProcedureBlock = 1 ]
                   " LEFT JOIN IRIS105.Physician Ph ON A.PhysicianId = Ph.PhysicianId"_ 
                   " LEFT JOIN IRIS105.Box B ON A.BoxId = B.BoxId"_ 
                   " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
-                  " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
-                  " AND (?='' OR A.SpecialtyId=?)"_ 
-                  " AND (?='' OR A.BoxId=?)"_ 
-                  " AND (?='' OR UPPER(COALESCE(P.FirstName||' '||P.LastName,'')) LIKE ?)"_ 
-                  " AND (?='' OR UPPER(COALESCE(Ph.FirstName||' '||Ph.LastName,'')) LIKE ?)"_ 
+                  " WHERE A.StartDateTime BETWEEN '"_fromTs_"' AND '"_toTs_"'"_ 
+                  " AND (COALESCE(?,'')='' OR A.SpecialtyId=?)"_ 
+                  " AND (COALESCE(?,'')='' OR A.BoxId=?)"_ 
+                  " AND (COALESCE(?,'')='' OR UPPER(COALESCE(P.FirstName||' '||P.LastName,'')) LIKE ?)"_ 
+                  " AND (COALESCE(?,'')='' OR UPPER(COALESCE(Ph.FirstName||' '||Ph.LastName,'')) LIKE ?)"_ 
                   " ORDER BY A.StartDateTime ASC"
         
         Set stmt = ##class(%SQL.Statement).%New()
         Set tSC = stmt.%Prepare(sql)
         Quit:$$$ISERR(tSC)
-        Set rs = stmt.%Execute(fromTs, toTs, specialtyId, specialtyId, boxId, boxId, patientName, patientLike, physicianName, physicianLike)
+        Set rs = stmt.%Execute(specialtyId, specialtyId, boxId, boxId, patientName, patientLike, physicianName, physicianLike)
         
         Set items = ##class(%DynamicArray).%New()
+        Set pushed = 0
         While rs.%Next() {
             Set row = ##class(%DynamicObject).%New()
             Do row.%Set("appointmentId", rs.%Get("AppointmentId"))
@@ -663,6 +666,7 @@ ClassMethod ScheduledPatients() As %Status [ ProcedureBlock = 1 ]
             Do row.%Set("specialtyName", rs.%Get("SpecialtyName"))
             Do row.%Set("noShow", rs.%Get("NoShow"))
             Do items.%Push(row)
+            Set pushed = pushed + 1
         }
         
         Set resp = ##class(%DynamicObject).%New()
@@ -675,6 +679,15 @@ ClassMethod ScheduledPatients() As %Status [ ProcedureBlock = 1 ]
         Do resp.%Set("limit", limit)
         Do resp.%Set("items", items)
         Do resp.%Set("count", items.%Size())
+        If debugFlag {
+            Set dbg = ##class(%DynamicObject).%New()
+            Do dbg.%Set("fromTs", fromTs)
+            Do dbg.%Set("toTs", toTs)
+            Do dbg.%Set("limit", limit)
+            Do dbg.%Set("pushed", pushed)
+            Do dbg.%Set("sql", sql)
+            Do resp.%Set("debug", dbg)
+        }
         Do ..%SendJSON(resp)
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -720,7 +733,9 @@ ClassMethod OccupancyTrend() As %Status [ ProcedureBlock = 1 ]
             Set weekLbl = ..%FormatWeek(rs.%Get("WeekYear"), rs.%Get("WeekNum"))
             If weekLbl="" Continue
             Set booked = +rs.%Get("Booked")
-            Set cap = slotsPerDay * 7
+            // Capacidad diaria = boxes * slotsPerDay (horas) * 3 pacientes/hora
+            Set capDay = ..%DailyCapacity(slotsPerDay, .boxCount)
+            Set cap = capDay * 7
             Set row = ##class(%DynamicObject).%New()
             Do row.%Set("week", weekLbl)
             Do row.%Set("booked", booked)
@@ -733,6 +748,7 @@ ClassMethod OccupancyTrend() As %Status [ ProcedureBlock = 1 ]
         Do resp.%Set("weeks", weeksArr)
         Do resp.%Set("weeksCount", weeks)
         Do resp.%Set("slotsPerDay", slotsPerDay)
+        Do resp.%Set("boxes", boxCount)
         Do resp.%Set("dateRange", rangeObj)
         Do ..%SendJSON(resp)
     } Catch ex {
@@ -770,7 +786,7 @@ ClassMethod ActiveAppointments() As %Status [ ProcedureBlock = 1 ]
                   " LEFT JOIN IRIS105.Box B ON A.BoxId = B.BoxId"_ 
                   " LEFT JOIN IRIS105.Specialty S ON A.SpecialtyId = S.SpecialtyId"_ 
                   " WHERE A.StartDateTime BETWEEN ? AND ?"_ 
-                  " ORDER BY A.StartDateTime ASC"
+                  " ORDER BY A.StartDateTime ASC, A.BoxId ASC, A.SpecialtyId ASC, A.AppointmentId ASC"
         Set stmt = ##class(%SQL.Statement).%New()
         Set tSC = stmt.%Prepare(sql)
         Quit:$$$ISERR(tSC)
@@ -952,6 +968,17 @@ ClassMethod %QueryParam(pName As %String) As %String
 ClassMethod %DayName(pISODate As %String) As %String
 {
     Quit ""
+}
+
+ClassMethod %DailyCapacity(pSlotsPerDay As %Integer, Output pBoxes As %Integer = 0) As %Integer
+{
+    Set pBoxes = 0
+    Set rs = ##class(%SQL.Statement).%ExecDirect(,"SELECT COUNT(*) AS BoxCount FROM IRIS105.Box")
+    If $IsObject(rs), rs.%Next() {
+        Set pBoxes = +rs.%Get("BoxCount")
+    }
+    If pBoxes<1 Set pBoxes = 1
+    Quit pBoxes * pSlotsPerDay * 3
 }
 
 ClassMethod %FormatWeek(pYear As %Integer, pWeek As %Integer) As %String
