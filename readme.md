@@ -7,12 +7,15 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, analytics y health check; pagina CSP `/csp/mltest/GCSP.Basic.cls` que consume la API.
 - Listo: plantillas SQL para el modelo IntegratedML (`sql/NoShow_model.sql`) y consultas de apoyo (`sql/demo_queries.sql`).
 - Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
+- Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
+- Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 - Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
 ## Avance reciente (sprint)
-- Nuevo endpoint `GET /api/ml/analytics/occupancy-weekly`: agrupación por specialty/box/physician, rango validado (default últimas 6 semanas), `slotsPerDay` configurable; week en formato `YYYY-Www`; probado contra el túnel.
-- OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con el endpoint de ocupación y esquema `OccupancyWeeklyResponse`; descripciones acotadas para Custom GPT.
+- Implementados endpoints `scheduled-patients`, `occupancy-trend`, `appointments/active` y `config/capacity` (GET/POST) en `IRIS105.REST.NoShowService`.
+- OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con esquemas y parámetros para los nuevos endpoints.
+- Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 - Pendientes priorizados: definir capacidad realista (tabla/config) para que `occupancyRate` no supere 1 salvo sobrecupo; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
 
 ## Requisitos rapidos

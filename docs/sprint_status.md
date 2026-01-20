@@ -5,6 +5,7 @@
 - Probado vía túnel `https://iris105.htc21.site/csp/mltest` con token demo; respuestas 200 con datos reales.
 - `docs/openapi.yaml` (OpenAPI 3.1.0) actualizado con el endpoint y esquema `OccupancyWeeklyResponse`; descripciones acotadas a <300 caracteres para el Custom GPT.
 - Endpoints implementados: `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active`, `/api/ml/config/capacity` (GET/POST) y OpenAPI actualizado.
+- Clase de setup agregada: `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 
 ## Pendientes prioritarios
 1) Capacidad realista: definir/guardar capacidad por box/especialidad (tabla/config) para que `occupancyRate` solo supere 1 en sobrecupo real.
