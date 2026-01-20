@@ -14,9 +14,10 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 
 ## Avance reciente (sprint)
 - Implementados endpoints `scheduled-patients`, `occupancy-trend`, `appointments/active` y `config/capacity` (GET/POST) en `IRIS105.REST.NoShowService`.
+- `occupancy-weekly` y `occupancy-trend` usan capacidad heurística: `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobreescribir con `/api/ml/config/capacity`.
 - OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con esquemas y parámetros para los nuevos endpoints.
 - Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
-- Pendientes priorizados: definir capacidad realista (tabla/config) para que `occupancyRate` no supere 1 salvo sobrecupo; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
+- Pendientes priorizados: definir capacidad realista persistente; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
 
 ## Requisitos rapidos
 - InterSystems IRIS 2024.1 (local o contenedor).
