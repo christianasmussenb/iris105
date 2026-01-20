@@ -1,0 +1,606 @@
+openapi: 3.1.0
+info:
+  title: IRIS105 No-Show API
+  version: "1.0.0"
+  description: >
+    API REST para scoring de riesgo de inasistencia (no-show), estadísticos y generación de datos mock
+    en el namespace MLTEST. Todos los endpoints (excepto `/api/health`) requieren header
+    `Authorization: Bearer <token>` validado contra `^IRIS105("API","Tokens",token)`.
+servers:
+  - url: https://iris105.htc21.site/csp/mltest
+    description: Via túnel Cloudflare (producción demo)
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Devuelve el estado del servicio REST sin requerir autenticación.
+      security: []
+      responses:
+        "200":
+          description: Servicio disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/ml/noshow/score:
+    post:
+      operationId: scoreNoShow
+      summary: Score de riesgo de no-show
+      description: >
+        Calcula la probabilidad de no-show usando una cita existente (`appointmentId`) o un payload
+        adhoc (`features`). Si no se especifica modelo se usa `NoShowModel2`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreRequest'
+            example:
+              appointmentId: "APPT-1"
+              modelName: "NoShowModel2"
+      responses:
+        "200":
+          description: Score calculado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScoreResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/stats/summary:
+    get:
+      operationId: statsSummary
+      summary: Resumen de datos y modelo
+      responses:
+        "200":
+          description: Totales de tablas y estado del modelo por defecto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsSummaryResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/stats/model:
+    get:
+      operationId: modelDetails
+      summary: Detalle de modelos IntegratedML
+      parameters:
+        - name: modelName
+          in: query
+          schema:
+            type: string
+          description: Nombre del modelo (default `NoShowModel2`)
+      responses:
+        "200":
+          description: Información de modelos, trained models y runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelDetailsResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/mock/generate:
+    post:
+      operationId: generateMockData
+      summary: Generar datos sintéticos de ejemplo
+      description: Crea pacientes, médicos, boxes, especialidades y citas usando parámetros opcionales.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateMockRequest'
+            example:
+              months: 3
+              targetOccupancy: 0.85
+              patients: 150
+      responses:
+        "201":
+          description: Generación disparada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateMockResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/stats/lastAppointmentByPatient:
+    get:
+      operationId: lastAppointmentByPatient
+      summary: Score de la última cita de un paciente
+      parameters:
+        - name: patientId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Última cita encontrada y puntuada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastAppointmentByPatientResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/busiest-day:
+    get:
+      operationId: busiestDay
+      summary: Día con más citas
+      responses:
+        "200":
+          description: Fecha con mayor volumen de citas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusiestDayResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/top-specialties:
+    get:
+      operationId: topSpecialties
+      summary: Especialidades con más citas y no-shows
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+          description: Límite de ítems a retornar (máximo 50)
+      responses:
+        "200":
+          description: Ranking por especialidad
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopSpecialtiesResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/top-physicians:
+    get:
+      operationId: topPhysicians
+      summary: Médicos con más citas y no-shows
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+          description: Límite de ítems a retornar (máximo 50)
+      responses:
+        "200":
+          description: Ranking por médico
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopPhysiciansResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/analytics/top-noshow:
+    get:
+      operationId: topNoShow
+      summary: Ranking por tasa de no-show
+      parameters:
+        - name: by
+          in: query
+          schema:
+            type: string
+            enum: [physician, specialty]
+          description: Agrupación a usar (default `specialty`)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+          description: Límite de ítems a retornar (máximo 50)
+      responses:
+        "200":
+          description: Ranking con trazas de depuración incluidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopNoShowResponse'
+        "500":
+          description: Error interno (se devuelve `debug` con el SQL ejecutado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopNoShowError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 5
+      description: Límite de ítems a retornar (máximo 50)
+  responses:
+    ErrorResponse:
+      description: Error de validación o negocio
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: IRIS105.REST.NoShowService
+        ts:
+          type: string
+          format: date-time
+          description: Timestamp ISO generado por el servidor
+    ScoreRequest:
+      type: object
+      properties:
+        appointmentId:
+          type: string
+          description: Identificador de la cita existente a puntuar
+        features:
+          $ref: '#/components/schemas/ScoreFeatures'
+        modelName:
+          type: string
+          description: Nombre del modelo IntegratedML (default `NoShowModel2`)
+        trainedModelName:
+          type: string
+          description: Trained model específico a usar (opcional)
+      oneOf:
+        - required: [appointmentId]
+        - required: [features]
+    ScoreFeatures:
+      type: object
+      properties:
+        PatientId:
+          type: integer
+        PhysicianId:
+          type: integer
+        BoxId:
+          type: integer
+        SpecialtyId:
+          type: integer
+        StartDateTime:
+          type: string
+          example: "2025-11-18 10:30:00"
+        BookingChannel:
+          type: string
+          example: WEB
+        BookingDaysInAdvance:
+          type: integer
+        HasSMSReminder:
+          type: integer
+          description: 1 si tiene recordatorio SMS, 0 si no
+        Reason:
+          type: string
+      additionalProperties: true
+    ScoreResponse:
+      type: object
+      properties:
+        appointmentId:
+          type: string
+          description: Se incluye cuando se puntúa por `appointmentId`
+        predictedLabel:
+          type: number
+          description: Clase predicha (1 = no-show)
+        probability:
+          type: number
+          format: double
+          description: Probabilidad de no-show
+        modelName:
+          type: string
+        trainedModelName:
+          type: string
+          nullable: true
+        input:
+          $ref: '#/components/schemas/ScoreFeatures'
+        scoredAt:
+          type: string
+          format: date-time
+    StatsSummaryResponse:
+      type: object
+      properties:
+        patients:
+          type: integer
+        appointments:
+          type: integer
+        scoredAppointments:
+          type: integer
+        noShowRate:
+          type: number
+          format: double
+        boxes:
+          type: integer
+        physicians:
+          type: integer
+        specialties:
+          type: integer
+        model:
+          type: string
+        defaultTrainedModel:
+          type: string
+          nullable: true
+        modelStatus:
+          type: string
+          nullable: true
+    ModelDetailsResponse:
+      type: object
+      properties:
+        modelName:
+          type: string
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              modelName:
+                type: string
+              description:
+                type: string
+              predicting:
+                type: string
+              predictingType:
+                type: string
+              featureList:
+                type: string
+              createdAt:
+                type: string
+              defaultTrainedModelName:
+                type: string
+                nullable: true
+              defaultTrainedModelAlgorithm:
+                type: string
+                nullable: true
+              modelSQL:
+                type: string
+        trainedModels:
+          type: array
+          items:
+            type: object
+            properties:
+              modelInfo:
+                type: string
+              modelName:
+                type: string
+              modelType:
+                type: string
+              provider:
+                type: string
+              trainedModelName:
+                type: string
+              trainedTimestamp:
+                type: string
+        trainingRuns:
+          type: array
+          items:
+            type: object
+            properties:
+              completedTimestamp:
+                type: string
+                nullable: true
+              log:
+                type: string
+                nullable: true
+              mlConfigurationName:
+                type: string
+                nullable: true
+              modelName:
+                type: string
+              provider:
+                type: string
+              runStatus:
+                type: string
+              settings:
+                type: string
+                nullable: true
+              startTimestamp:
+                type: string
+                nullable: true
+              statusCode:
+                type: string
+                nullable: true
+              trainingDuration:
+                type: string
+                nullable: true
+              trainingRunName:
+                type: string
+              trainingRunQuery:
+                type: string
+                nullable: true
+        validationRuns:
+          type: array
+          items:
+            type: object
+            properties:
+              completedTimestamp:
+                type: string
+                nullable: true
+              log:
+                type: string
+                nullable: true
+              modelName:
+                type: string
+              runStatus:
+                type: string
+              settings:
+                type: string
+                nullable: true
+              startTimestamp:
+                type: string
+                nullable: true
+              statusCode:
+                type: string
+                nullable: true
+              trainedModelName:
+                type: string
+                nullable: true
+              validationDuration:
+                type: string
+                nullable: true
+              validationRunName:
+                type: string
+              validationRunQuery:
+                type: string
+                nullable: true
+        validationMetrics:
+          type: array
+          items:
+            type: object
+            properties:
+              metricName:
+                type: string
+              metricValue:
+                type: number
+                format: double
+              modelName:
+                type: string
+              targetValue:
+                type: string
+                nullable: true
+              trainedModelName:
+                type: string
+                nullable: true
+              validationRunName:
+                type: string
+    GenerateMockRequest:
+      type: object
+      properties:
+        months:
+          type: integer
+          description: Meses de horizonte para generar citas (default 3)
+        targetOccupancy:
+          type: number
+          format: double
+          description: Porcentaje de ocupación deseado (0-1, default 0.85)
+        seed:
+          type: integer
+          description: Semilla opcional para reproducibilidad
+        patients:
+          type: integer
+          description: Cantidad de pacientes a crear (default 100)
+      additionalProperties: false
+    GenerateMockResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        result:
+          description: Resultado de la ejecución (estatus %Status u objeto vacío)
+          nullable: true
+    LastAppointmentByPatientResponse:
+      allOf:
+        - $ref: '#/components/schemas/ScoreResponse'
+        - type: object
+          properties:
+            patientId:
+              type: integer
+    BusiestDayResponse:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        dayOfWeek:
+          type: string
+          description: Reservado para futura traducción de día
+        appointments:
+          type: integer
+    TopSpecialtiesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              specialtyId:
+                type: integer
+              name:
+                type: string
+              appointments:
+                type: integer
+              noShow:
+                type: integer
+    TopPhysiciansResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              physicianId:
+                type: integer
+              name:
+                type: string
+              appointments:
+                type: integer
+              noShow:
+                type: integer
+    TopNoShowResponse:
+      type: object
+      properties:
+        by:
+          type: string
+          enum: [physician, specialty]
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              appointments:
+                type: integer
+              noShow:
+                type: integer
+              noShowRate:
+                type: number
+                format: double
+        debug:
+          type: array
+          items:
+            type: string
+          description: Trazas de pasos y SQL usado
+    TopNoShowError:
+      type: object
+      properties:
+        error:
+          type: integer
+          example: 1
+        message:
+          type: string
+        debug:
+          type: array
+          items:
+            type: string
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: integer
+          example: 1
+        message:
+          type: string
