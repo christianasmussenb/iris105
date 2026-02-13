@@ -13,7 +13,7 @@ Property ModelName As %String(MAXLEN = 128);
 
 Property TrainedModelName As %String(MAXLEN = 128);
 
-Index AppointmentRiskByAppointment On AppointmentId;
+Index AppointmentRiskByAppointment On AppointmentId [ Unique ];
 
 Storage Default
 {

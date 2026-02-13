@@ -3,7 +3,7 @@ Class IRIS105.Util.NoShowPredictor Extends %RegisteredObject
 
 Parameter FeatureColumns = "PatientId,PhysicianId,BoxId,SpecialtyId,StartDateTime,BookingChannel,BookingDaysInAdvance,HasSMSReminder,Reason";
 
-ClassMethod ScoreAppointment(pAppointmentId As %Integer, pModelName As %String = "NoShowModel", pTrainedModelName As %String = "", Output pResult As %DynamicObject) As %Status
+ClassMethod ScoreAppointment(pAppointmentId As %String, pModelName As %String = "NoShowModel", pTrainedModelName As %String = "", Output pResult As %DynamicObject) As %Status
 {
     Set tSC = $$$OK, pResult = ""
     Try {
@@ -28,11 +28,17 @@ ClassMethod ScoreAppointment(pAppointmentId As %Integer, pModelName As %String =
             Set tSC = $$$ERROR($$$GeneralError,"AppointmentId "_pAppointmentId_" was not found")
             Quit
         }
+        Set probability = +rs.NoShowProb
+        Set riskLevel = ..%RiskLevel(probability)
+        Set tSC = ..%UpsertAppointmentRisk(rs.AppointmentId, probability, riskLevel, pModelName, pTrainedModelName, .riskId)
+        Quit:$$$ISERR(tSC)
         
         Set pResult = ##class(%DynamicObject).%New()
         Do pResult.%Set("appointmentId", rs.AppointmentId)
         Do pResult.%Set("predictedLabel", rs.PredictedLabel)
-        Do pResult.%Set("probability", rs.NoShowProb)
+        Do pResult.%Set("probability", probability)
+        Do pResult.%Set("riskLevel", riskLevel)
+        Do pResult.%Set("riskId", riskId)
         Do pResult.%Set("modelName", pModelName)
         Do pResult.%Set("trainedModelName", $Select(pTrainedModelName'="":pTrainedModelName, 1:""))
         Do pResult.%Set("scoredAt", $ZDATETIME($HOROLOG, 3, 1, 3))
@@ -66,10 +72,13 @@ ClassMethod ScorePayload(pPayload As %DynamicObject, pModelName As %String = "No
             Set tSC = $$$ERROR($$$GeneralError,"No prediction result was returned")
             Quit
         }
+        Set probability = +rs.NoShowProb
+        Set riskLevel = ..%RiskLevel(probability)
         
         Set pResult = ##class(%DynamicObject).%New()
         Do pResult.%Set("predictedLabel", rs.PredictedLabel)
-        Do pResult.%Set("probability", rs.NoShowProb)
+        Do pResult.%Set("probability", probability)
+        Do pResult.%Set("riskLevel", riskLevel)
         Do pResult.%Set("modelName", pModelName)
         Do pResult.%Set("trainedModelName", $Select(pTrainedModelName'="":pTrainedModelName, 1:""))
         Do pResult.%Set("input", pPayload)
@@ -78,6 +87,46 @@ ClassMethod ScorePayload(pPayload As %DynamicObject, pModelName As %String = "No
         Set tSC = ex.AsStatus()
     }
     Quit tSC
+}
+
+ClassMethod %UpsertAppointmentRisk(pAppointmentId As %String, pProbability As %Double, pRiskLevel As %String, pModelName As %String, pTrainedModelName As %String = "", Output pRiskId As %Integer = "") As %Status
+{
+    Set tSC = $$$OK, pRiskId = ""
+    Try {
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare("SELECT TOP 1 %ID AS RiskId FROM IRIS105.AppointmentRisk WHERE AppointmentId=?")
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(pAppointmentId)
+        If rs.%Next() {
+            Set risk = ##class(IRIS105.AppointmentRisk).%OpenId(+rs.%Get("RiskId"))
+            If '$IsObject(risk) {
+                Set tSC = $$$ERROR($$$GeneralError,"Unable to open AppointmentRisk record for "_pAppointmentId)
+                Quit
+            }
+        } Else {
+            Set risk = ##class(IRIS105.AppointmentRisk).%New()
+            Set risk.AppointmentId = pAppointmentId
+        }
+        Set risk.ScoredAt = $ZDATETIME($HOROLOG, 3, 1, 3)
+        Set risk.NoShowProb = +pProbability
+        Set risk.RiskLevel = pRiskLevel
+        Set risk.ModelName = pModelName
+        Set risk.TrainedModelName = pTrainedModelName
+        Set tSC = risk.%Save()
+        Quit:$$$ISERR(tSC)
+        Set pRiskId = risk.%Id()
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
+ClassMethod %RiskLevel(pProbability As %Double) As %String
+{
+    Set p = +pProbability
+    If p>=0.70 Quit "HIGH"
+    If p>=0.40 Quit "MEDIUM"
+    Quit "LOW"
 }
 
 ClassMethod %PredictExpression(pModelName As %String, pTrainedModelName As %String = "") As %String

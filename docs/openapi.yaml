@@ -50,6 +50,54 @@ paths:
                 $ref: '#/components/schemas/ScoreResponse'
         "400":
           $ref: '#/components/responses/ErrorResponse'
+  /api/ml/model/train:
+    post:
+      operationId: trainModel
+      summary: Entrenar modelo IntegratedML
+      description: Ejecuta `TRAIN MODEL` para refrescar el modelo con datos nuevos.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainModelRequest'
+            example:
+              modelName: "NoShowModel2"
+              settings:
+                seed: 42
+                TrainMode: BALANCE
+                MaxTime: 60
+      responses:
+        "201":
+          description: Entrenamiento ejecutado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainModelResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
+  /api/ml/model/validate:
+    post:
+      operationId: validateModel
+      summary: Validar modelo IntegratedML
+      description: Ejecuta `VALIDATE MODEL` y devuelve el último run con métricas.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateModelRequest'
+            example:
+              modelName: "NoShowModel2"
+      responses:
+        "201":
+          description: Validación ejecutada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateModelResponse'
+        "400":
+          $ref: '#/components/responses/ErrorResponse'
   /api/ml/stats/summary:
     get:
       operationId: statsSummary
@@ -518,6 +566,13 @@ components:
           type: number
           format: double
           description: Probabilidad de no-show
+        riskLevel:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+          description: Nivel de riesgo derivado de la probabilidad
+        riskId:
+          type: integer
+          description: ID de `IRIS105.AppointmentRisk` (solo para score por `appointmentId`)
         modelName:
           type: string
         trainedModelName:
@@ -528,6 +583,141 @@ components:
         scoredAt:
           type: string
           format: date-time
+    TrainModelRequest:
+      type: object
+      properties:
+        modelName:
+          type: string
+          description: Nombre del modelo a entrenar (default `NoShowModel2`)
+        settings:
+          type: object
+          description: JSON opcional para `TRAIN MODEL ... USING {...}`
+          additionalProperties: true
+      additionalProperties: false
+    ValidateModelRequest:
+      type: object
+      properties:
+        modelName:
+          type: string
+          description: Nombre del modelo a validar (default `NoShowModel2`)
+      additionalProperties: false
+    ModelStatusItem:
+      type: object
+      properties:
+        modelName:
+          type: string
+        defaultTrainedModelName:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+    TrainingRunSummary:
+      type: object
+      properties:
+        trainingRunName:
+          type: string
+          nullable: true
+        runStatus:
+          type: string
+          nullable: true
+        statusCode:
+          type: string
+          nullable: true
+        startTimestamp:
+          type: string
+          nullable: true
+        completedTimestamp:
+          type: string
+          nullable: true
+        trainingDuration:
+          type: string
+          nullable: true
+        trainingRunQuery:
+          type: string
+          nullable: true
+    ValidationRunSummary:
+      type: object
+      properties:
+        validationRunName:
+          type: string
+          nullable: true
+        trainedModelName:
+          type: string
+          nullable: true
+        runStatus:
+          type: string
+          nullable: true
+        statusCode:
+          type: string
+          nullable: true
+        startTimestamp:
+          type: string
+          nullable: true
+        completedTimestamp:
+          type: string
+          nullable: true
+        validationDuration:
+          type: string
+          nullable: true
+        validationRunQuery:
+          type: string
+          nullable: true
+    ValidationMetricItem:
+      type: object
+      properties:
+        metricName:
+          type: string
+        metricValue:
+          type: number
+          format: double
+        targetValue:
+          type: string
+          nullable: true
+        trainedModelName:
+          type: string
+          nullable: true
+        validationRunName:
+          type: string
+          nullable: true
+    TrainModelResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        action:
+          type: string
+          example: train
+        modelName:
+          type: string
+        sql:
+          type: string
+        run:
+          $ref: '#/components/schemas/TrainingRunSummary'
+        modelInfo:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelStatusItem'
+    ValidateModelResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        action:
+          type: string
+          example: validate
+        modelName:
+          type: string
+        sql:
+          type: string
+        run:
+          $ref: '#/components/schemas/ValidationRunSummary'
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationMetricItem'
     StatsSummaryResponse:
       type: object
       properties:

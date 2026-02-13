@@ -41,6 +41,8 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
 {
 <Routes>
     <Route Url="/api/ml/noshow/score" Method="POST" Call="Score"/>
+    <Route Url="/api/ml/model/train" Method="POST" Call="TrainModel"/>
+    <Route Url="/api/ml/model/validate" Method="POST" Call="ValidateModel"/>
     <Route Url="/api/ml/stats/summary" Method="GET" Call="StatsSummary"/>
     <Route Url="/api/ml/stats/model" Method="GET" Call="ModelDetails"/>
     <Route Url="/api/ml/mock/generate" Method="POST" Call="GenerateMock"/>
@@ -135,6 +137,103 @@ ClassMethod ModelDetails() As %Status [ ProcedureBlock = 1 ]
             "metricName,metricValue,modelName,targetValue,trainedModelName,validationRunName",
             model))
         Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Ejecuta TRAIN MODEL para refrescar el modelo con datos nuevos
+ClassMethod TrainModel() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set request = ..%ReadJSONBody()
+        If '$IsObject(request) {
+            Set request = ##class(%DynamicObject).%New()
+        }
+        Set modelName = ..#DefaultModelName
+        If request.%IsDefined("modelName"),(request.%Get("modelName")'="") {
+            Set modelName = request.%Get("modelName")
+        }
+        Set settingsJSON = ""
+        If request.%IsDefined("settings") {
+            Set settings = request.%Get("settings")
+            If '$IsObject(settings) {
+                Set tSC = $$$ERROR($$$GeneralError,"The 'settings' property must be a JSON object")
+                Quit
+            }
+            Set settingsJSON = settings.%ToJSON()
+        }
+        Quit:$$$ISERR(tSC)
+        
+        Set sql = "TRAIN MODEL "_..%QuoteIdentifier(modelName)
+        If settingsJSON'="" {
+            Set sql = sql_" USING "_settingsJSON
+        }
+        
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute()
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("status", "ok")
+        Do resp.%Set("action", "train")
+        Do resp.%Set("modelName", modelName)
+        Do resp.%Set("sql", sql)
+        Do resp.%Set("run", ..%LatestTrainingRun(modelName))
+        Do resp.%Set("modelInfo", ..%SelectToArray(
+            "SELECT MODEL_NAME, DEFAULT_TRAINED_MODEL_NAME, STATUS FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?",
+            "modelName,defaultTrainedModelName,status",
+            modelName))
+        Do ..%SendJSON(resp, 201)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Ejecuta VALIDATE MODEL y devuelve el ultimo run con metricas
+ClassMethod ValidateModel() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set request = ..%ReadJSONBody()
+        If '$IsObject(request) {
+            Set request = ##class(%DynamicObject).%New()
+        }
+        Set modelName = ..#DefaultModelName
+        If request.%IsDefined("modelName"),(request.%Get("modelName")'="") {
+            Set modelName = request.%Get("modelName")
+        }
+        
+        Set sql = "VALIDATE MODEL "_..%QuoteIdentifier(modelName)
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare(sql)
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute()
+        
+        Set lastRun = ..%LatestValidationRun(modelName)
+        Set runName = ""
+        If lastRun.%IsDefined("validationRunName") {
+            Set runName = lastRun.%Get("validationRunName")
+        }
+        
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("status", "ok")
+        Do resp.%Set("action", "validate")
+        Do resp.%Set("modelName", modelName)
+        Do resp.%Set("sql", sql)
+        Do resp.%Set("run", lastRun)
+        Do resp.%Set("metrics", ..%ValidationMetricsByRun(modelName, runName))
+        Do ..%SendJSON(resp, 201)
     } Catch ex {
         Set tSC = ex.AsStatus()
     }
@@ -267,6 +366,81 @@ ClassMethod %FillModelInfo(ByRef pObj As %DynamicObject)
         Do pObj.%Set("defaultTrainedModel", rs.%Get("DEFAULT_TRAINED_MODEL_NAME"))
         Do pObj.%Set("modelStatus", rs.%Get("STATUS"))
     }
+}
+
+ClassMethod %LatestTrainingRun(pModelName As %String) As %DynamicObject
+{
+    Set row = ##class(%DynamicObject).%New()
+    Set stmt = ##class(%SQL.Statement).%New()
+    Set sql = "SELECT TOP 1 TRAINING_RUN_NAME, RUN_STATUS, STATUS_CODE, START_TIMESTAMP, COMPLETED_TIMESTAMP, TRAINING_DURATION, TRAINING_RUN_QUERY"_ 
+              " FROM INFORMATION_SCHEMA.ML_TRAINING_RUNS WHERE MODEL_NAME=?"_
+              " ORDER BY START_TIMESTAMP DESC"
+    If $$$ISERR(stmt.%Prepare(sql)) Quit row
+    Set rs = stmt.%Execute(pModelName)
+    If $IsObject(rs), rs.%Next() {
+        Do row.%Set("trainingRunName", rs.%Get("TRAINING_RUN_NAME"))
+        Do row.%Set("runStatus", rs.%Get("RUN_STATUS"))
+        Do row.%Set("statusCode", rs.%Get("STATUS_CODE"))
+        Do row.%Set("startTimestamp", rs.%Get("START_TIMESTAMP"))
+        Do row.%Set("completedTimestamp", rs.%Get("COMPLETED_TIMESTAMP"))
+        Do row.%Set("trainingDuration", rs.%Get("TRAINING_DURATION"))
+        Do row.%Set("trainingRunQuery", rs.%Get("TRAINING_RUN_QUERY"))
+    }
+    Quit row
+}
+
+ClassMethod %LatestValidationRun(pModelName As %String) As %DynamicObject
+{
+    Set row = ##class(%DynamicObject).%New()
+    Set stmt = ##class(%SQL.Statement).%New()
+    Set sql = "SELECT TOP 1 VALIDATION_RUN_NAME, TRAINED_MODEL_NAME, RUN_STATUS, STATUS_CODE, START_TIMESTAMP, COMPLETED_TIMESTAMP, VALIDATION_DURATION, VALIDATION_RUN_QUERY"_ 
+              " FROM INFORMATION_SCHEMA.ML_VALIDATION_RUNS WHERE MODEL_NAME=?"_
+              " ORDER BY START_TIMESTAMP DESC"
+    If $$$ISERR(stmt.%Prepare(sql)) Quit row
+    Set rs = stmt.%Execute(pModelName)
+    If $IsObject(rs), rs.%Next() {
+        Do row.%Set("validationRunName", rs.%Get("VALIDATION_RUN_NAME"))
+        Do row.%Set("trainedModelName", rs.%Get("TRAINED_MODEL_NAME"))
+        Do row.%Set("runStatus", rs.%Get("RUN_STATUS"))
+        Do row.%Set("statusCode", rs.%Get("STATUS_CODE"))
+        Do row.%Set("startTimestamp", rs.%Get("START_TIMESTAMP"))
+        Do row.%Set("completedTimestamp", rs.%Get("COMPLETED_TIMESTAMP"))
+        Do row.%Set("validationDuration", rs.%Get("VALIDATION_DURATION"))
+        Do row.%Set("validationRunQuery", rs.%Get("VALIDATION_RUN_QUERY"))
+    }
+    Quit row
+}
+
+ClassMethod %ValidationMetricsByRun(pModelName As %String, pRunName As %String = "") As %DynamicArray
+{
+    Set arr = ##class(%DynamicArray).%New()
+    Set stmt = ##class(%SQL.Statement).%New()
+    If pRunName'="" {
+        Set sql = "SELECT METRIC_NAME, METRIC_VALUE, TARGET_VALUE, TRAINED_MODEL_NAME, VALIDATION_RUN_NAME"_ 
+                  " FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME=? AND VALIDATION_RUN_NAME=?"_
+                  " ORDER BY METRIC_NAME"
+    } Else {
+        Set sql = "SELECT METRIC_NAME, METRIC_VALUE, TARGET_VALUE, TRAINED_MODEL_NAME, VALIDATION_RUN_NAME"_ 
+                  " FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME=?"_
+                  " ORDER BY VALIDATION_RUN_NAME DESC, METRIC_NAME"
+    }
+    If $$$ISERR(stmt.%Prepare(sql)) Quit arr
+    If pRunName'="" {
+        Set rs = stmt.%Execute(pModelName, pRunName)
+    } Else {
+        Set rs = stmt.%Execute(pModelName)
+    }
+    If '$IsObject(rs) Quit arr
+    While rs.%Next() {
+        Set row = ##class(%DynamicObject).%New()
+        Do row.%Set("metricName", rs.%Get("METRIC_NAME"))
+        Do row.%Set("metricValue", rs.%Get("METRIC_VALUE"))
+        Do row.%Set("targetValue", rs.%Get("TARGET_VALUE"))
+        Do row.%Set("trainedModelName", rs.%Get("TRAINED_MODEL_NAME"))
+        Do row.%Set("validationRunName", rs.%Get("VALIDATION_RUN_NAME"))
+        Do arr.%Push(row)
+    }
+    Quit arr
 }
 
 ClassMethod %SelectToArray(pSQL As %String, pAliases As %String, pModel As %String = "") As %DynamicArray
@@ -1059,6 +1233,11 @@ ClassMethod %BuildCapacityFactor(pGroupBy As %String) As %DynamicObject
         }
     }
     Quit map
+}
+
+ClassMethod %QuoteIdentifier(pName As %String) As %String
+{
+    Quit """"_$Replace($Get(pName),"""","""""")_""""
 }
 
 ClassMethod %OccupancySQL(pGroupBy As %String) As %String

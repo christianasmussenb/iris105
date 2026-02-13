@@ -9,7 +9,8 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
 - Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
 - Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
-- Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
+- Listo: persistencia de scoring en `IRIS105.AppointmentRisk` con estrategia `latest-only` por `AppointmentId` (upsert en cada nuevo score).
+- Pendiente: pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
 ## Avance reciente (sprint)
@@ -62,7 +63,9 @@ Do ##class(IRIS105.Util.MockData).Generate()
 - Generador de citas (`IRIS105.Util.MockAppointments`) asigna especialidad y box de forma ciclica y marca `NoShow` al azar (~15% por defecto).
 
 ## API REST (base: `/csp/mltest`)
-- `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc.
+- `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc; cuando se usa `appointmentId`, persiste/actualiza `IRIS105.AppointmentRisk`.
+- `POST /api/ml/model/train`: reentrena el modelo (opcional `settings` para `TRAIN MODEL ... USING {...}`).
+- `POST /api/ml/model/validate`: valida el modelo y devuelve metricas del ultimo run.
 - `GET /api/ml/stats/summary`: totales de tablas y estado del modelo por defecto (`NoShowModel2`).
 - `GET /api/ml/stats/model`: informacion de modelos, trained models y runs en INFORMATION_SCHEMA.
 - `POST /api/ml/mock/generate`: genera datos sintetic (parms opcionales: months, targetOccupancy, seed, patients).
@@ -102,6 +105,16 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
         }
       }'
 
+# Reentrenar el modelo (despues de cargar mas pacientes/medicos/agendas)
+curl -X POST http://localhost:52773/csp/mltest/api/ml/model/train \
+  -H "Content-Type: application/json" \
+  -d '{"modelName":"NoShowModel2","settings":{"seed":42,"TrainMode":"BALANCE","MaxTime":60}}'
+
+# Validar el modelo y obtener metricas del ultimo run
+curl -X POST http://localhost:52773/csp/mltest/api/ml/model/validate \
+  -H "Content-Type: application/json" \
+  -d '{"modelName":"NoShowModel2"}'
+
 # Estadisticas y runs
 curl http://localhost:52773/csp/mltest/api/ml/stats/summary
 curl http://localhost:52773/csp/mltest/api/ml/stats/model
@@ -117,7 +130,7 @@ curl http://localhost:52773/csp/mltest/api/health
 
 ## UI CSP de demo
 - Pagina: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
-- Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, ver runs/metricas del modelo.
+- Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, entrenar modelo, validar modelo, ver runs/metricas del modelo.
 
 ## Notas para Custom GPT y uso de endpoints
 - Autenticacion: `Authorization: Bearer <token>`, validado contra `^IRIS105("API","Tokens",token)` en el namespace de la web app (MLTEST). Cargar el token con `Set ^IRIS105("API","Tokens","demo-readonly-token")=1`.
