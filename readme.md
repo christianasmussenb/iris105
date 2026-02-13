@@ -61,6 +61,7 @@ Do ##class(IRIS105.Util.MockData).Generate()
 - Clases persistentes: `IRIS105.Patient`, `Physician`, `Box`, `Specialty`, `Appointment`, `AppointmentRisk`.
 - Campos clave para el modelo: PatientId, PhysicianId, BoxId, SpecialtyId, StartDateTime, BookingChannel, BookingDaysInAdvance, HasSMSReminder, Reason.
 - Generador de citas (`IRIS105.Util.MockAppointments`) asigna especialidad y box de forma ciclica y marca `NoShow` al azar (~15% por defecto).
+- En generación mock, las citas usan el pool real de `PatientId` existentes en `IRIS105.Patient` (fallback a `PAT-1..PAT-N` solo si la tabla está vacía).
 
 ## API REST (base: `/csp/mltest`)
 - `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc; cuando se usa `appointmentId`, persiste/actualiza `IRIS105.AppointmentRisk`.

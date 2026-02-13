@@ -12,6 +12,14 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
         Set slotsPerDay = $Select(params.%IsDefined("slotsPerDay"):params.%Get("slotsPerDay"),1:8)
         Set totalDays = $Select(params.%IsDefined("totalDays"):params.%Get("totalDays"),1:90)
         Set nPatients = $Select(params.%IsDefined("patients"):params.%Get("patients"),1:100)
+        Set existingPatientCount = ..%LoadExistingPatientIds(.patientIds)
+        Set useExistingPatients = (existingPatientCount>0)
+        Set patientPoolCount = $Select(useExistingPatients:existingPatientCount,1:nPatients)
+        If useExistingPatients {
+            Write !,"[MockAppointments] Pool de pacientes desde IRIS105.Patient: ",patientPoolCount
+        } Else {
+            Write !,"[MockAppointments] Pool de pacientes fallback PAT-1..PAT-",patientPoolCount
+        }
         
         If nPhysicians<1 {
             Set tSC = $$$ERROR($$$GeneralError,"At least one physician is required")
@@ -25,7 +33,7 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
             Set tSC = $$$ERROR($$$GeneralError,"Total days must be positive")
             Quit:$$$ISERR(tSC)
         }
-        If nPatients<1 {
+        If patientPoolCount<1 {
             Set tSC = $$$ERROR($$$GeneralError,"At least one patient is required")
             Quit:$$$ISERR(tSC)
         }
@@ -40,7 +48,12 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
                     If ($Random(100) < (occupancy*100)) {
                         Set tAppointment = ##class(IRIS105.Appointment).%New()
                         Set tAppointment.AppointmentId = "APPT-"_apptCounter
-                        Set tAppointment.PatientId = "PAT-"_($Random(nPatients)+1)
+                        If useExistingPatients {
+                            Set patientIndex = $Random(patientPoolCount)+1
+                            Set tAppointment.PatientId = patientIds.GetAt(patientIndex)
+                        } Else {
+                            Set tAppointment.PatientId = "PAT-"_($Random(patientPoolCount)+1)
+                        }
                         Set tAppointment.PhysicianId = "PHY-"_phy
                         Set tAppointment.BoxId = "BOX-"_($Random(nBoxes)+1)
                         
@@ -78,6 +91,24 @@ ClassMethod GenerateAppointments(params As %DynamicObject) As %Status [ Procedur
         Set tSC = ex.AsStatus()
     }
     Quit tSC
+}
+
+ClassMethod %LoadExistingPatientIds(Output pIds As %ListOfDataTypes) As %Integer
+{
+    Set pIds = ##class(%ListOfDataTypes).%New()
+    Set count = 0
+    Set stmt = ##class(%SQL.Statement).%New()
+    Set tSC = stmt.%Prepare("SELECT DISTINCT PatientId FROM IRIS105.Patient WHERE PatientId IS NOT NULL AND PatientId<>''")
+    If $$$ISERR(tSC) Quit 0
+    Set rs = stmt.%Execute()
+    If '$IsObject(rs) Quit 0
+    While rs.%Next() {
+        Set pid = rs.%Get("PatientId")
+        If pid="" Continue
+        Do pIds.Insert(pid)
+        Set count = count + 1
+    }
+    Quit count
 }
 
 }

@@ -3,6 +3,7 @@
 Esta POC usa InterSystems IRIS 2024.1 en el namespace `MLTEST`, combinando IntegratedML y un servicio REST expuesto para consumo web.
 
 - **Datos** (`IRIS105.*`): tablas persistentes para pacientes, médicos, boxes, especialidades, citas y la tabla de resultados `AppointmentRisk` (estrategia `latest-only` por cita).
+  - El mock de citas toma `PatientId` desde los pacientes existentes (no solo por rango `PAT-1..N`).
 - **Modelo IntegratedML**: `NoShowModel2` entrenado con `%AutoML` sobre `IRIS105.Appointment`.  
   - Scoring directo vía SQL usando `PREDICT(NoShowModel2)` y `PROBABILITY(NoShowModel2 FOR 1)`.
 - **API REST** (`IRIS105.REST.NoShowService`):  
