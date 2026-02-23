@@ -34,7 +34,8 @@ ClassMethod Upsert(pName As %String, pNamespace As %String, pCSPEnabled As %Bool
         Do props.%Set("CSPEnabled", pCSPEnabled)
         Do props.%Set("CSPZENEnabled", pCSPEnabled)
         Do props.%Set("RESTEnabled", pRESTEnabled)
-        If pDispatchClass'="" Do props.%Set("DispatchClass", pDispatchClass)
+        // Siempre setear DispatchClass (incluso vacío) para evitar que quede un valor heredado.
+        Do props.%Set("DispatchClass", pDispatchClass)
         If pCookiePath'="" Do props.%Set("SessionCookiePath", pCookiePath)
         Do props.%Set("AuthenticationMethods", "64,4") // Password + Unauthenticated (demo)
         If '##class(Security.Applications).Exists(pName) {

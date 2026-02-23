@@ -11,6 +11,7 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
 - Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
 - Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
+- Listo: nueva pagina `GCSP.Agenda` (agenda semanal/mensual con filtros por especialidad/medico/paciente) conectada desde `GCSP.Basic`.
 - Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
@@ -20,8 +21,9 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Actualizada `GCSP.Basic` con bloque "Entrenamiento SQL (paso a paso)", botones 1..6, `Submit` y limpieza de resultados al cambiar de paso.
 - Corregida compatibilidad de `INFORMATION_SCHEMA.ML_MODELS` para IRIS 2024.1 (uso de `CREATE_TIMESTAMP`, `PREDICTING_COLUMN_NAME`, `WITH_COLUMNS`; no usar `STATUS`).
 - `occupancy-weekly` y `occupancy-trend` usan capacidad heurística: `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobreescribir con `/api/ml/config/capacity`.
-- OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con esquemas y parámetros para los nuevos endpoints.
+- OpenAPI actualizado (3.1.0, versión API `1.0.1`) en `docs/openapi.yaml`, con exclusión explícita de `POST /api/ml/model/step/execute` para Custom GPT.
 - Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
+- Ajuste en `IRIS105.Util.WebAppSetup`: `DispatchClass` se setea siempre (incluido vacío) para evitar que `/csp/mltest2` renderice `GCSP.Basic` en todas las rutas.
 - Pendientes priorizados: definir capacidad realista persistente; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
 
 ## Requisitos rapidos
@@ -50,6 +52,7 @@ Do $system.OBJ.CompilePackage("IRIS105","ckr")
 ```objectscript
 Do ##class(IRIS105.Util.WebAppSetup).ConfigureAll()
 ```
+   Nota: `/csp/mltest2` debe quedar sin `DispatchClass` para permitir servir `GCSP.Basic.cls` y `GCSP.Agenda.cls` por ruta.
 
 5) Generar datos mock (usa valores por defecto: 3 meses, 0.85 de ocupacion, 8 medicos, 100 pacientes):
 ```objectscript
@@ -134,6 +137,7 @@ curl http://localhost:52773/csp/mltest/api/health
 
 ## UI CSP de demo
 - Pagina recomendada (sin auth CSP): `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
+- Nueva agenda visual: `http://localhost:52773/csp/mltest2/GCSP.Agenda.cls` (vista semanal/mensual, filtros por especialidad/medico/paciente, detalle por cita y actualizacion automatica por cambio de filtros).
 - Base API en la pantalla: `/csp/mltest` (usar token Bearer en el campo "Bearer Token").
 - Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, ver runs/metricas del modelo.
 - Nuevo: bloque "Entrenamiento SQL (paso a paso)" con botones 1..6, `Submit` para ejecutar el paso y ventana de resultados.
@@ -143,6 +147,7 @@ curl http://localhost:52773/csp/mltest/api/health
 - Compatibilidad IRIS 2024.1: en `INFORMATION_SCHEMA.ML_MODELS` usar `CREATE_TIMESTAMP` (no `STATUS`) y columnas `PREDICTING_COLUMN_NAME`, `PREDICTING_COLUMN_TYPE`, `WITH_COLUMNS`.
 - Lectura de parametros: usar query string (`?by=...&limit=...`) o JSON (`by`, `limit` en el body). El endpoint usa `%request.Data(...)` y fallback a `QUERY_STRING` para evitar errores de propiedades inexistentes.
 - Trazas: los endpoints de analytics incluyen `debug` en la respuesta con pasos (`step=...`), el SQL y cada fila procesada (id, citas, noShow, tasa). Dejarlo activo para facilitar integracion y troubleshooting en el GPT.
+- OpenAPI para GPT: `docs/openapi.yaml` excluye intencionalmente `POST /api/ml/model/step/execute`; ese endpoint sigue disponible en backend/UI pero no en Actions del Custom GPT.
 - Evitar `TOP ?` parametrizado: concatenar el limite en el SQL o cortar en memoria; algunas versiones de IRIS no soportan `TOP ?` y provocan errores de parseo/caché.
 - En caso de cambios de clase, recompilar y purgar cache de consultas: `Do $system.OBJ.Compile("IRIS105.REST.NoShowService","ck")` y `Do $SYSTEM.SQL.Purge()`.
 - Objetivo de despliegue: exponer la API como Actions para un Custom GPT, usando los endpoints anteriores (incluyendo `debug` en analytics) y el health check `/api/health` para verificaciones rapidas.

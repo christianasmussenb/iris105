@@ -131,3 +131,4 @@ rg -n "servers:|url:|model/step/execute|excluye intencionalmente" docs/openapi.y
 - `404`: revisar prefijo `/csp/mltest` en URL pública.
 - `502/5xx` en host Cloudflare: túnel caído o IRIS local no disponible.
 - Warnings al importar OpenAPI: reimportar schema completo y validar indentación YAML.
+- `GCSP.Agenda.cls` muestra `GCSP.Basic`: revisar web app `/csp/mltest2`; debe tener `DispatchClass` vacío (si apunta a `GCSP.Basic`, intercepta todas las rutas).

@@ -10,5 +10,8 @@ Esta POC usa InterSystems IRIS 2024.1 en el namespace `MLTEST`, combinando Integ
   - `GET /api/ml/stats/summary`: totales de tablas, % no-show, modelo por defecto.  
   - `POST /api/ml/mock/generate`: generar datos sintéticos adicionales.  
   - `GET /api/ml/stats/lastAppointmentByPatient`: obtiene la última cita y la puntúa.
-- **Consumo web**: página CSP simple (`/csp/mltest/GCSP.Basic.cls`) y cualquier frontend puede llamar los endpoints REST y obtener `predictedLabel` + `probability` para dibujar alertas o etiquetas de riesgo.
+- **Consumo web**: páginas CSP en `/csp/mltest2`:
+  - `GCSP.Basic.cls`: operación general (stats, scoring, mock, entrenamiento SQL por pasos).
+  - `GCSP.Agenda.cls`: agenda semanal/mensual con filtros por especialidad/médico/paciente y detalle por cita.
+  - Cualquier frontend puede llamar los endpoints REST y obtener `predictedLabel` + `probability` para dibujar alertas o etiquetas de riesgo.
 - **Monitoreo**: vistas `INFORMATION_SCHEMA.ML_MODELS`, `ML_TRAINED_MODELS`, `ML_VALIDATION_RUNS`, `ML_VALIDATION_METRICS` registran runs y métricas del modelo que se exponen en consultas SQL o dashboards.
