@@ -29,13 +29,19 @@ ClassMethod ScoreAppointment(pAppointmentId As %Integer, pModelName As %String =
             Quit
         }
         
+        Set trainedModelName = $Select(pTrainedModelName'="":pTrainedModelName, 1:"")
+        Set scoredAt = $ZDATETIME($HOROLOG, 3, 1, 3)
+        
         Set pResult = ##class(%DynamicObject).%New()
         Do pResult.%Set("appointmentId", rs.AppointmentId)
         Do pResult.%Set("predictedLabel", rs.PredictedLabel)
         Do pResult.%Set("probability", rs.NoShowProb)
         Do pResult.%Set("modelName", pModelName)
-        Do pResult.%Set("trainedModelName", $Select(pTrainedModelName'="":pTrainedModelName, 1:""))
-        Do pResult.%Set("scoredAt", $ZDATETIME($HOROLOG, 3, 1, 3))
+        Do pResult.%Set("trainedModelName", trainedModelName)
+        Do pResult.%Set("scoredAt", scoredAt)
+        
+        Set tSC = ..%UpsertAppointmentRisk(rs.AppointmentId, rs.NoShowProb, pModelName, trainedModelName, scoredAt)
+        Quit:$$$ISERR(tSC)
     } Catch ex {
         Set tSC = ex.AsStatus()
     }
@@ -132,6 +138,59 @@ ClassMethod %BuildPayloadParams(pPayload As %DynamicObject) As %ArrayOfDataTypes
 ClassMethod %QuoteIdentifier(pName As %String) As %String
 {
     Quit """"_$Replace(pName,"""","""""")_""""
+}
+
+ClassMethod %UpsertAppointmentRisk(pAppointmentId As %String, pNoShowProb As %Double, pModelName As %String, pTrainedModelName As %String = "", pScoredAt As %String = "") As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set rowId = ""
+        Set stmt = ##class(%SQL.Statement).%New()
+        Set tSC = stmt.%Prepare("SELECT TOP 1 %ID AS RowId FROM IRIS105.AppointmentRisk WHERE AppointmentId=? ORDER BY %ID DESC")
+        Quit:$$$ISERR(tSC)
+        Set rs = stmt.%Execute(pAppointmentId)
+        If $IsObject(rs), rs.%Next() {
+            Set rowId = +rs.%Get("RowId")
+        }
+        
+        TSTART
+        If rowId>0 {
+            Set risk = ##class(IRIS105.AppointmentRisk).%OpenId(rowId)
+            If '$IsObject(risk) {
+                TROLLBACK
+                Set tSC = $$$ERROR($$$GeneralError, "Could not open AppointmentRisk row "_rowId)
+                Quit
+            }
+        } Else {
+            Set risk = ##class(IRIS105.AppointmentRisk).%New()
+            Set risk.AppointmentId = pAppointmentId
+        }
+        
+        Set risk.ScoredAt = $Select(pScoredAt'="":pScoredAt, 1:$ZDATETIME($HOROLOG, 3, 1, 3))
+        Set risk.NoShowProb = +pNoShowProb
+        Set risk.RiskLevel = ..%RiskLevel(risk.NoShowProb)
+        Set risk.ModelName = pModelName
+        Set risk.TrainedModelName = pTrainedModelName
+        
+        Set tSC = risk.%Save()
+        If $$$ISERR(tSC) {
+            TROLLBACK
+            Quit
+        }
+        TCOMMIT
+    } Catch ex {
+        If $TLEVEL>0 TROLLBACK
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
+ClassMethod %RiskLevel(pNoShowProb As %Double) As %String
+{
+    Set prob = +pNoShowProb
+    If prob>=0.7 Quit "HIGH"
+    If prob>=0.4 Quit "MEDIUM"
+    Quit "LOW"
 }
 
 }

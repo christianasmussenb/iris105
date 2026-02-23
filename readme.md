@@ -12,7 +12,8 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
 - Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 - Listo: nueva pagina `GCSP.Agenda` (agenda semanal/mensual con filtros por especialidad/medico/paciente) conectada desde `GCSP.Basic`.
-- Pendiente: persistir los resultados de scoring en `IRIS105.AppointmentRisk` (hoy solo se devuelven en la respuesta), pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
+- Listo: el scoring por `appointmentId` persiste en `IRIS105.AppointmentRisk` con upsert por cita (actualiza si ya existe).
+- Pendiente: pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
 
 ## Avance reciente (sprint)
@@ -70,7 +71,7 @@ Do ##class(IRIS105.Util.MockData).Generate()
 - Generador de citas (`IRIS105.Util.MockAppointments`) asigna especialidad y box de forma ciclica y marca `NoShow` al azar (~15% por defecto).
 
 ## API REST (base: `/csp/mltest`)
-- `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc.
+- `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc. Cuando se usa `appointmentId`, persiste/actualiza `IRIS105.AppointmentRisk`.
 - `GET /api/ml/stats/summary`: totales de tablas y estado del modelo por defecto (`NoShowModel2`).
 - `GET /api/ml/stats/model`: informacion de modelos, trained models y runs en INFORMATION_SCHEMA.
 - `POST /api/ml/model/step/execute`: ejecuta paso SQL del flujo de entrenamiento/prediccion (`step` de 1 a 6).
