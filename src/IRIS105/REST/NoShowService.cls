@@ -43,6 +43,7 @@ XData UrlMap [ XMLNamespace = "http://www.intersystems.com/urlmap" ]
     <Route Url="/api/ml/noshow/score" Method="POST" Call="Score"/>
     <Route Url="/api/ml/stats/summary" Method="GET" Call="StatsSummary"/>
     <Route Url="/api/ml/stats/model" Method="GET" Call="ModelDetails"/>
+    <Route Url="/api/ml/model/step/execute" Method="POST" Call="ExecuteModelStep"/>
     <Route Url="/api/ml/mock/generate" Method="POST" Call="GenerateMock"/>
     <Route Url="/api/ml/stats/lastAppointmentByPatient" Method="GET" Call="LastAppointmentByPatient"/>
     <Route Url="/api/health" Method="GET" Call="Health"/>
@@ -115,8 +116,8 @@ ClassMethod ModelDetails() As %Status [ ProcedureBlock = 1 ]
         Set resp = ##class(%DynamicObject).%New()
         Do resp.%Set("modelName", model)
         Do resp.%Set("models", ..%SelectToArray(
-            "SELECT MODEL_NAME, DESCRIPTION, PREDICTING, PREDICTING_TYPE, FEATURE_LIST, CREATED_AT, DEFAULT_TRAINED_MODEL_NAME, DEFAULT_TRAINED_MODEL_ALGORITHM, MODEL_SQL FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?",
-            "modelName,description,predicting,predictingType,featureList,createdAt,defaultTrainedModelName,defaultTrainedModelAlgorithm,modelSQL",
+            "SELECT MODEL_NAME, DESCRIPTION, PREDICTING_COLUMN_NAME, PREDICTING_COLUMN_TYPE, WITH_COLUMNS, CREATE_TIMESTAMP, DEFAULT_TRAINED_MODEL_NAME, DEFAULT_SETTINGS, DEFAULT_TRAINING_QUERY FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?",
+            "modelName,description,predictingColumnName,predictingColumnType,withColumns,createTimestamp,defaultTrainedModelName,defaultSettings,defaultTrainingQuery",
             model))
         Do resp.%Set("trainedModels", ..%SelectToArray(
             "SELECT MODEL_INFO, MODEL_NAME, MODEL_TYPE, PROVIDER, TRAINED_MODEL_NAME, TRAINED_TIMESTAMP FROM INFORMATION_SCHEMA.ML_TRAINED_MODELS WHERE MODEL_NAME=?",
@@ -134,6 +135,126 @@ ClassMethod ModelDetails() As %Status [ ProcedureBlock = 1 ]
             "SELECT METRIC_NAME, METRIC_VALUE, MODEL_NAME, TARGET_VALUE, TRAINED_MODEL_NAME, VALIDATION_RUN_NAME FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME=?",
             "metricName,metricValue,modelName,targetValue,trainedModelName,validationRunName",
             model))
+        Do ..%SendJSON(resp)
+    } Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    If $$$ISERR(tSC) {
+        Do ..%HandleError(tSC)
+    }
+    Quit $$$OK
+}
+
+/// Ejecuta uno de los 6 pasos SQL del entrenamiento/prediccion del modelo
+ClassMethod ExecuteModelStep() As %Status [ ProcedureBlock = 1 ]
+{
+    Set tSC = $$$OK
+    Try {
+        Set request = ..%ReadJSONBody()
+        If '$IsObject(request) {
+            Set request = ##class(%DynamicObject).%New()
+        }
+        Set step = +$Select(request.%IsDefined("step"):request.%Get("step"),1:0)
+        If (step<1)!(step>6) {
+            Set tSC = $$$ERROR($$$GeneralError,"step must be between 1 and 6")
+            Quit
+        }
+        
+        Set model = ..#DefaultModelName
+        Set resp = ##class(%DynamicObject).%New()
+        Do resp.%Set("step", step)
+        Do resp.%Set("modelName", model)
+        
+        If step=1 {
+            Set sql = "SELECT MODEL_NAME, DEFAULT_TRAINED_MODEL_NAME, CREATE_TIMESTAMP FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?"
+            Do resp.%Set("title","Verificar modelo")
+            Do resp.%Set("sql", sql)
+            Set rows = ..%SelectToArray(sql,"modelName,defaultTrainedModelName,createTimestamp",model)
+            Do resp.%Set("rows", rows)
+            Do resp.%Set("count", rows.%Size())
+        } ElseIf step=2 {
+            Do resp.%Set("title","Crear modelo (si no existe)")
+            If ..%ModelExists(model) {
+                Do resp.%Set("status","skipped")
+                Do resp.%Set("message","Model already exists")
+            } Else {
+                Set sql = "CREATE MODEL "_model_" "_
+                          "PREDICTING (NoShow) "_
+                          "WITH ("_
+                          "PatientId INTEGER,"_
+                          "PhysicianId INTEGER,"_
+                          "BoxId INTEGER,"_
+                          "SpecialtyId INTEGER,"_
+                          "StartDateTime TIMESTAMP,"_
+                          "BookingChannel VARCHAR(50),"_
+                          "BookingDaysInAdvance INTEGER,"_
+                          "HasSMSReminder BOOLEAN,"_
+                          "Reason VARCHAR(200)) "_
+                          "FROM IRIS105.Appointment"
+                Set stmt = ##class(%SQL.Statement).%New()
+                Set tSC = stmt.%Prepare(sql)
+                Quit:$$$ISERR(tSC)
+                Set rs = stmt.%Execute()
+                Do resp.%Set("status","executed")
+                Do resp.%Set("sql", sql)
+                If $IsObject(rs) Do resp.%Set("sqlcode", 0)
+            }
+            Set rows = ..%SelectToArray("SELECT MODEL_NAME, DEFAULT_TRAINED_MODEL_NAME, CREATE_TIMESTAMP FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?","modelName,defaultTrainedModelName,createTimestamp",model)
+            Do resp.%Set("rows", rows)
+            Do resp.%Set("count", rows.%Size())
+        } ElseIf step=3 {
+            If '..%ModelExists(model) {
+                Set tSC = $$$ERROR($$$GeneralError,"Model not found. Run step 2 first.")
+                Quit
+            }
+            Set sql = "TRAIN MODEL "_model_" USING {""seed"":42,""TrainMode"":""BALANCE"",""MaxTime"":60,""MinimumDesiredScore"":0.80}"
+            Set stmt = ##class(%SQL.Statement).%New()
+            Set tSC = stmt.%Prepare(sql)
+            Quit:$$$ISERR(tSC)
+            Set rs = stmt.%Execute()
+            Do resp.%Set("title","Entrenar modelo")
+            Do resp.%Set("status","executed")
+            Do resp.%Set("sql", sql)
+            If $IsObject(rs) Do resp.%Set("sqlcode", 0)
+            Set rows = ..%SelectToArray("SELECT TOP 1 TRAINING_RUN_NAME, RUN_STATUS, START_TIMESTAMP, COMPLETED_TIMESTAMP, STATUS_CODE FROM INFORMATION_SCHEMA.ML_TRAINING_RUNS WHERE MODEL_NAME=? ORDER BY START_TIMESTAMP DESC","trainingRunName,runStatus,startTimestamp,completedTimestamp,statusCode",model)
+            Do resp.%Set("rows", rows)
+            Do resp.%Set("count", rows.%Size())
+        } ElseIf step=4 {
+            If '..%ModelExists(model) {
+                Set tSC = $$$ERROR($$$GeneralError,"Model not found. Run step 2 first.")
+                Quit
+            }
+            Set sql = "VALIDATE MODEL "_model
+            Set stmt = ##class(%SQL.Statement).%New()
+            Set tSC = stmt.%Prepare(sql)
+            Quit:$$$ISERR(tSC)
+            Set rs = stmt.%Execute()
+            Do resp.%Set("title","Validar modelo")
+            Do resp.%Set("status","executed")
+            Do resp.%Set("sql", sql)
+            If $IsObject(rs) Do resp.%Set("sqlcode", 0)
+            Set rows = ..%SelectToArray("SELECT TOP 1 VALIDATION_RUN_NAME, RUN_STATUS, START_TIMESTAMP, COMPLETED_TIMESTAMP, STATUS_CODE, TRAINED_MODEL_NAME FROM INFORMATION_SCHEMA.ML_VALIDATION_RUNS WHERE MODEL_NAME=? ORDER BY START_TIMESTAMP DESC","validationRunName,runStatus,startTimestamp,completedTimestamp,statusCode,trainedModelName",model)
+            Do resp.%Set("rows", rows)
+            Do resp.%Set("count", rows.%Size())
+        } ElseIf step=5 {
+            Do resp.%Set("title","Revisar estado y metricas")
+            Do resp.%Set("modelInfo", ..%SelectToArray("SELECT MODEL_NAME, DESCRIPTION, PREDICTING_COLUMN_NAME, PREDICTING_COLUMN_TYPE, WITH_COLUMNS, CREATE_TIMESTAMP, DEFAULT_TRAINED_MODEL_NAME, DEFAULT_SETTINGS, DEFAULT_TRAINING_QUERY FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?","modelName,description,predictingColumnName,predictingColumnType,withColumns,createTimestamp,defaultTrainedModelName,defaultSettings,defaultTrainingQuery",model))
+            Set metrics = ..%SelectToArray("SELECT METRIC_NAME, METRIC_VALUE, TRAINED_MODEL_NAME, VALIDATION_RUN_NAME FROM INFORMATION_SCHEMA.ML_VALIDATION_METRICS WHERE MODEL_NAME=? ORDER BY TRAINED_MODEL_NAME DESC, METRIC_NAME","metricName,metricValue,trainedModelName,validationRunName",model)
+            Do resp.%Set("validationMetrics", metrics)
+            Do resp.%Set("count", metrics.%Size())
+        } ElseIf step=6 {
+            Do resp.%Set("title","Prediccion SQL")
+            Set sql = "SELECT TOP 10 A.AppointmentId AS appointmentId, "_
+                      "PREDICT("_model_") AS predictedLabel, "_
+                      "PROBABILITY("_model_" FOR 1) AS noShowProb "_
+                      "FROM IRIS105.Appointment A "_
+                      "ORDER BY A.StartDateTime DESC"
+            Set rows = ..%SelectToArray(sql,"appointmentId,predictedLabel,noShowProb")
+            Do resp.%Set("sql", sql)
+            Do resp.%Set("rows", rows)
+            Do resp.%Set("count", rows.%Size())
+        }
+        
         Do ..%SendJSON(resp)
     } Catch ex {
         Set tSC = ex.AsStatus()
@@ -257,15 +378,26 @@ ClassMethod %FillCounts(ByRef pObj As %DynamicObject)
 
 ClassMethod %FillModelInfo(ByRef pObj As %DynamicObject)
 {
-    Set q = "SELECT DEFAULT_TRAINED_MODEL_NAME, STATUS"_ 
+    Set q = "SELECT DEFAULT_TRAINED_MODEL_NAME, CREATE_TIMESTAMP"_ 
             " FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?"
     Set stmt = ##class(%SQL.Statement).%New()
-    Do stmt.%Prepare(q)
+    Set sc = stmt.%Prepare(q)
+    Quit:$$$ISERR(sc)
     Set rs = stmt.%Execute(..#DefaultModelName)
-    If rs.%Next() {
+    If $IsObject(rs), rs.%Next() {
         Do pObj.%Set("model", ..#DefaultModelName)
         Do pObj.%Set("defaultTrainedModel", rs.%Get("DEFAULT_TRAINED_MODEL_NAME"))
-        Do pObj.%Set("modelStatus", rs.%Get("STATUS"))
+        Do pObj.%Set("modelCreatedAt", rs.%Get("CREATE_TIMESTAMP"))
+        Set modelStatus = "not_trained"
+        Set stmt2 = ##class(%SQL.Statement).%New()
+        Set sc2 = stmt2.%Prepare("SELECT TOP 1 RUN_STATUS FROM INFORMATION_SCHEMA.ML_TRAINING_RUNS WHERE MODEL_NAME=? ORDER BY START_TIMESTAMP DESC")
+        If $$$ISOK(sc2) {
+            Set rs2 = stmt2.%Execute(..#DefaultModelName)
+            If $IsObject(rs2), rs2.%Next() {
+                Set modelStatus = rs2.%Get("RUN_STATUS")
+            }
+        }
+        Do pObj.%Set("modelStatus", modelStatus)
     }
 }
 
@@ -292,6 +424,20 @@ ClassMethod %SelectToArray(pSQL As %String, pAliases As %String, pModel As %Stri
         Do arr.%Push(row)
     }
     Quit arr
+}
+
+ClassMethod %ModelExists(pModelName As %String = "") As %Boolean
+{
+    If pModelName="" Set pModelName = ..#DefaultModelName
+    Set stmt = ##class(%SQL.Statement).%New()
+    Set sc = stmt.%Prepare("SELECT COUNT(*) AS C FROM INFORMATION_SCHEMA.ML_MODELS WHERE MODEL_NAME=?")
+    If $$$ISERR(sc) Quit 0
+    Set rs = stmt.%Execute(pModelName)
+    If '$IsObject(rs) Quit 0
+    If rs.%Next() {
+        Quit (+rs.%Get("C")>0)
+    }
+    Quit 0
 }
 
 ClassMethod %ReadJSONBody() As %DynamicObject [ ProcedureBlock = 1 ]
