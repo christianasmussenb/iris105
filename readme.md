@@ -4,7 +4,9 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 
 ## Estado del proyecto (fin del sprint)
 - Listo: clases persistentes para pacientes, medicos, boxes, especialidades y citas; generador de datos sintetic (mock) y script de compilacion del paquete.
-- Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, analytics y health check; pagina CSP `/csp/mltest/GCSP.Basic.cls` que consume la API.
+- Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, analytics y health check; pagina CSP `/csp/mltest2/GCSP.Basic.cls` que consume la API.
+- Listo: flujo guiado de entrenamiento SQL en la UI (`GCSP.Basic`) con pasos 1..6, boton `Submit` y panel de resultados.
+- Listo: endpoint `POST /api/ml/model/step/execute` para ejecutar de forma controlada los pasos SQL del modelo desde la UI.
 - Listo: plantillas SQL para el modelo IntegratedML (`sql/NoShow_model.sql`) y consultas de apoyo (`sql/demo_queries.sql`).
 - Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
 - Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
@@ -14,6 +16,9 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 
 ## Avance reciente (sprint)
 - Implementados endpoints `scheduled-patients`, `occupancy-trend`, `appointments/active` y `config/capacity` (GET/POST) en `IRIS105.REST.NoShowService`.
+- Implementado endpoint `POST /api/ml/model/step/execute` para pasos SQL (verificar, crear, entrenar, validar, revisar metricas, predecir).
+- Actualizada `GCSP.Basic` con bloque "Entrenamiento SQL (paso a paso)", botones 1..6, `Submit` y limpieza de resultados al cambiar de paso.
+- Corregida compatibilidad de `INFORMATION_SCHEMA.ML_MODELS` para IRIS 2024.1 (uso de `CREATE_TIMESTAMP`, `PREDICTING_COLUMN_NAME`, `WITH_COLUMNS`; no usar `STATUS`).
 - `occupancy-weekly` y `occupancy-trend` usan capacidad heurística: `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobreescribir con `/api/ml/config/capacity`.
 - OpenAPI actualizado (3.1.0) en `docs/openapi.yaml` con esquemas y parámetros para los nuevos endpoints.
 - Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
@@ -65,6 +70,7 @@ Do ##class(IRIS105.Util.MockData).Generate()
 - `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc.
 - `GET /api/ml/stats/summary`: totales de tablas y estado del modelo por defecto (`NoShowModel2`).
 - `GET /api/ml/stats/model`: informacion de modelos, trained models y runs en INFORMATION_SCHEMA.
+- `POST /api/ml/model/step/execute`: ejecuta paso SQL del flujo de entrenamiento/prediccion (`step` de 1 a 6).
 - `POST /api/ml/mock/generate`: genera datos sintetic (parms opcionales: months, targetOccupancy, seed, patients).
 - `GET /api/ml/stats/lastAppointmentByPatient?patientId=...`: busca la ultima cita de un paciente y la puntua.
 - `GET /api/ml/analytics/busiest-day`: fecha con mas citas.
@@ -82,11 +88,13 @@ Ejemplos:
 ```bash
 # Score por cita
 curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
+  -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
   -d '{"appointmentId":"APPT-1"}'
 
 # Score con payload adhoc
 curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
+  -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
   -d '{
         "features":{
@@ -103,11 +111,20 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
       }'
 
 # Estadisticas y runs
-curl http://localhost:52773/csp/mltest/api/ml/stats/summary
-curl http://localhost:52773/csp/mltest/api/ml/stats/model
+curl http://localhost:52773/csp/mltest/api/ml/stats/summary \
+  -H "Authorization: Bearer demo-readonly-token"
+curl http://localhost:52773/csp/mltest/api/ml/stats/model \
+  -H "Authorization: Bearer demo-readonly-token"
+
+# Ejecutar un paso SQL del flujo guiado (1..6)
+curl -X POST http://localhost:52773/csp/mltest/api/ml/model/step/execute \
+  -H "Authorization: Bearer demo-readonly-token" \
+  -H "Content-Type: application/json" \
+  -d '{"step":3}'
 
 # Generar mock adicional
 curl -X POST http://localhost:52773/csp/mltest/api/ml/mock/generate \
+  -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
   -d '{"months":3,"targetOccupancy":0.85,"patients":200}'
 
@@ -116,11 +133,14 @@ curl http://localhost:52773/csp/mltest/api/health
 ```
 
 ## UI CSP de demo
-- Pagina: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
+- Pagina recomendada (sin auth CSP): `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
+- Base API en la pantalla: `/csp/mltest` (usar token Bearer en el campo "Bearer Token").
 - Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, ver runs/metricas del modelo.
+- Nuevo: bloque "Entrenamiento SQL (paso a paso)" con botones 1..6, `Submit` para ejecutar el paso y ventana de resultados.
 
 ## Notas para Custom GPT y uso de endpoints
 - Autenticacion: `Authorization: Bearer <token>`, validado contra `^IRIS105("API","Tokens",token)` en el namespace de la web app (MLTEST). Cargar el token con `Set ^IRIS105("API","Tokens","demo-readonly-token")=1`.
+- Compatibilidad IRIS 2024.1: en `INFORMATION_SCHEMA.ML_MODELS` usar `CREATE_TIMESTAMP` (no `STATUS`) y columnas `PREDICTING_COLUMN_NAME`, `PREDICTING_COLUMN_TYPE`, `WITH_COLUMNS`.
 - Lectura de parametros: usar query string (`?by=...&limit=...`) o JSON (`by`, `limit` en el body). El endpoint usa `%request.Data(...)` y fallback a `QUERY_STRING` para evitar errores de propiedades inexistentes.
 - Trazas: los endpoints de analytics incluyen `debug` en la respuesta con pasos (`step=...`), el SQL y cada fila procesada (id, citas, noShow, tasa). Dejarlo activo para facilitar integracion y troubleshooting en el GPT.
 - Evitar `TOP ?` parametrizado: concatenar el limite en el SQL o cortar en memoria; algunas versiones de IRIS no soportan `TOP ?` y provocan errores de parseo/caché.

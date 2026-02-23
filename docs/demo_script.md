@@ -70,5 +70,7 @@ curl "http://localhost:52773/csp/mltest/api/ml/stats/lastAppointmentByPatient?pa
 - `scoredAt`: timestamp servido por IRIS.
 
 9) **UI sencilla en IRIS CSP**
-- Página: `http://localhost:52773/csp/mltest/GCSP.Basic.cls`
+- Página recomendada: `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
+- Base API en la pantalla: `/csp/mltest`
 - Botones para: ver estadísticas, score por `appointmentId`, score por último `patientId`, generar mock data rápido.
+- Incluye sección "Entrenamiento SQL (paso a paso)" con botones 1..6 y `Submit` para ejecutar cada paso.
