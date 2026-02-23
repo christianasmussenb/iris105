@@ -1,11 +1,13 @@
 openapi: 3.1.0
 info:
   title: IRIS105 No-Show API
-  version: "1.0.0"
+  version: "1.0.1"
   description: >
     API REST para scoring de riesgo de inasistencia (no-show), estadísticos y generación de datos mock
     en el namespace MLTEST. Todos los endpoints (excepto `/api/health`) requieren header
     `Authorization: Bearer <token>` validado contra `^IRIS105("API","Tokens",token)`.
+    Esta especificación está pensada para Custom GPT y excluye intencionalmente
+    `POST /api/ml/model/step/execute` (aunque exista en backend) para no exponerlo vía Actions.
 servers:
   - url: https://iris105.htc21.site/csp/mltest
     description: Via túnel Cloudflare (producción demo)
@@ -304,6 +306,11 @@ paths:
             maximum: 500
             default: 100
           description: Límite de ítems a retornar (máximo 500)
+        - name: debug
+          in: query
+          schema:
+            type: string
+          description: Si es `1`, incluye bloque `debug` con SQL y parámetros usados.
       responses:
         "200":
           description: Citas agendadas con filtros aplicados
@@ -551,6 +558,9 @@ components:
         defaultTrainedModel:
           type: string
           nullable: true
+        modelCreatedAt:
+          type: string
+          nullable: true
         modelStatus:
           type: string
           nullable: true
@@ -568,22 +578,23 @@ components:
                 type: string
               description:
                 type: string
-              predicting:
+              predictingColumnName:
                 type: string
-              predictingType:
+              predictingColumnType:
                 type: string
-              featureList:
+              withColumns:
                 type: string
-              createdAt:
+              createTimestamp:
                 type: string
               defaultTrainedModelName:
                 type: string
                 nullable: true
-              defaultTrainedModelAlgorithm:
+              defaultSettings:
                 type: string
                 nullable: true
-              modelSQL:
+              defaultTrainingQuery:
                 type: string
+                nullable: true
         trainedModels:
           type: array
           items:
@@ -890,6 +901,19 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AppointmentSummaryItem'
+        debug:
+          type: object
+          properties:
+            fromTs:
+              type: string
+            toTs:
+              type: string
+            limit:
+              type: integer
+            pushed:
+              type: integer
+            sql:
+              type: string
     ActiveAppointmentsResponse:
       type: object
       properties:
@@ -958,6 +982,8 @@ components:
         weeksCount:
           type: integer
         slotsPerDay:
+          type: integer
+        boxes:
           type: integer
         dateRange:
           type: object

@@ -156,4 +156,5 @@ curl http://localhost:52773/csp/mltest/api/health
 - `docs/arquitectura.md`: vision funcional del POC y flujos.
 - `docs/sprint1_setup.md`: pasos de setup inicial y compilacion.
 - `docs/demo_script.md`: guion rapido de demo (SQL + cURL).
+- `docs/custom_gpt_cloudflare_runbook.md`: despliegue de localhost a Cloudflare Tunnel e import de `openapi.yaml` en Custom GPT.
 - `BUENAS_PRACTICAS_IRIS_COMBINADAS.md`: guia general de buenas practicas para proyectos IRIS.
