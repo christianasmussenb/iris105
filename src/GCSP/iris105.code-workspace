@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"name": "localhost:MLTEST",
+			"uri": "isfs://localhost:mltest/"
+		}
+	],
+	"settings": {}
+}
