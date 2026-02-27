@@ -341,7 +341,25 @@ ClassMethod GenerateMock() As %Status [ ProcedureBlock = 1 ]
         If request.%IsDefined("patients") {
             Do config.%Set("patients", request.%Get("patients"))
         }
+        If request.%IsDefined("clearBeforeGenerate") {
+            Do config.%Set("clearBeforeGenerate", +request.%Get("clearBeforeGenerate"))
+        }
+        If request.%IsDefined("defaultNoShowRate") {
+            Do config.%Set("defaultNoShowRate", +request.%Get("defaultNoShowRate"))
+        }
+        If request.%IsDefined("specialtyNoShowRates") {
+            Set rates = request.%Get("specialtyNoShowRates")
+            If '$IsObject(rates) {
+                Set tSC = $$$ERROR($$$GeneralError,"specialtyNoShowRates must be a JSON object")
+                Quit
+            }
+            Do config.%Set("specialtyNoShowRates", rates)
+        }
         Set out = ##class(IRIS105.Util.MockData).Generate(config)
+        If $$$ISERR(out) {
+            Set tSC = out
+            Quit
+        }
         Set resp = ##class(%DynamicObject).%New()
         Do resp.%Set("status","ok")
         Do resp.%Set("result", out)

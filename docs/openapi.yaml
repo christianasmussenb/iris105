@@ -88,7 +88,10 @@ paths:
     post:
       operationId: generateMockData
       summary: Generar datos sintéticos de ejemplo
-      description: Crea pacientes, médicos, boxes, especialidades y citas usando parámetros opcionales.
+      description: >
+        Crea pacientes, médicos, boxes, especialidades y citas usando parámetros opcionales.
+        Por defecto limpia datos mock previos y agenda con reglas horarias fijas
+        (L-V 08:00-18:00, Sáb 09:00-14:00, sin domingos).
       requestBody:
         required: false
         content:
@@ -99,6 +102,11 @@ paths:
               months: 3
               targetOccupancy: 0.85
               patients: 150
+              clearBeforeGenerate: 1
+              specialtyNoShowRates:
+                SPEC-1: 0.12
+                SPEC-2: 0.20
+                SPEC-3: 0.08
       responses:
         "201":
           description: Generación disparada correctamente
@@ -720,6 +728,20 @@ components:
         patients:
           type: integer
           description: Cantidad de pacientes a crear (default 100)
+        clearBeforeGenerate:
+          type: integer
+          enum: [0, 1]
+          description: Si es 1, elimina datos mock existentes antes de regenerar (default 1)
+        defaultNoShowRate:
+          type: number
+          format: double
+          description: Tasa por defecto de no-show (0-1, default 0.15)
+        specialtyNoShowRates:
+          type: object
+          description: Mapa opcional `{SpecialtyId: tasaNoShow}` (ej. `SPEC-1 -> 0.12`)
+          additionalProperties:
+            type: number
+            format: double
       additionalProperties: false
     GenerateMockResponse:
       type: object

@@ -12,6 +12,7 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
 - Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 - Listo: nueva pagina `GCSP.Agenda` (agenda semanal/mensual con filtros por especialidad/medico/paciente) conectada desde `GCSP.Basic`.
+- Listo: despliegue de agenda por celdas `(dia,hora)` con color de fondo segun tasa de `NoShow` agregada de las citas contenidas en cada celda.
 - Listo: el scoring por `appointmentId` persiste en `IRIS105.AppointmentRisk` con upsert por cita (actualiza si ya existe).
 - Pendiente: pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
 - Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
@@ -26,6 +27,33 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
 - Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
 - Ajuste en `IRIS105.Util.WebAppSetup`: `DispatchClass` se setea siempre (incluido vacío) para evitar que `/csp/mltest2` renderice `GCSP.Basic` en todas las rutas.
 - Pendientes priorizados: definir capacidad realista persistente; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
+
+## Cambios ejecutados y probados (2026-02-27)
+- Agenda `GCSP.Agenda`: se cambió el despliegue por celda `(día,hora)` y se colorea el fondo según tasa agregada de `NoShow` dentro de la celda.
+- Mock data: se aplicaron restricciones horarias globales para todas las especialidades y todos los boxes:
+  - Lunes a viernes: `08:00-18:00`
+  - Sábado: `09:00-14:00`
+  - Domingo: sin agenda
+- Mock data: se incorporó parámetro de `NoShow` por especialidad (`specialtyNoShowRates`) con fallback `defaultNoShowRate`.
+- Mock data: limpieza previa de base antes de regenerar (`clearBeforeGenerate=1`), incluyendo `AppointmentRisk`, `Appointment`, `Physician`, `Patient`, `Box`, `Specialty`, `Payer` y `^IRIS105("Capacity")`.
+- API/UI: `POST /api/ml/mock/generate` y `GCSP.Basic` actualizados para recibir `clearBeforeGenerate`, `defaultNoShowRate` y `specialtyNoShowRates`.
+- Corrección técnica durante pruebas: ajuste en `IRIS105.Util.MockData.%ExecNonQuery` para evitar error de compilación por `QUIT` con argumento inválido.
+
+### Evidencia de validación (ejecutada)
+- Generación mock ejecutada con:
+  - `{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}`
+- Resultado de generación:
+  - `4` pagadores, `3` especialidades, `3` boxes, `8` médicos, `200` pacientes, `5379` citas.
+- Validación de restricciones horarias sobre `IRIS105.Appointment`:
+  - `SundayRows=0`
+  - `SaturdayOut=0`
+  - `WeekdayOut=0`
+  - `MinuteOut=0`
+  - `DurationOut=0`
+- Validación de tasa real `NoShow` por especialidad:
+  - `SPEC-1`: `0.1174` (objetivo `0.12`)
+  - `SPEC-2`: `0.1909` (objetivo `0.20`)
+  - `SPEC-3`: `0.0782` (objetivo `0.08`)
 
 ## Requisitos rapidos
 - InterSystems IRIS 2024.1 (local o contenedor).
@@ -55,7 +83,7 @@ Do ##class(IRIS105.Util.WebAppSetup).ConfigureAll()
 ```
    Nota: `/csp/mltest2` debe quedar sin `DispatchClass` para permitir servir `GCSP.Basic.cls` y `GCSP.Agenda.cls` por ruta.
 
-5) Generar datos mock (usa valores por defecto: 3 meses, 0.85 de ocupacion, 8 medicos, 100 pacientes):
+5) Generar datos mock (limpia base primero; usa 3 meses, 0.85 de ocupacion, 8 medicos, 100 pacientes; horarios L-V 08:00-18:00 y S 09:00-14:00):
 ```objectscript
 Do ##class(IRIS105.Util.MockData).Generate()
 ```
@@ -68,14 +96,14 @@ Do ##class(IRIS105.Util.MockData).Generate()
 ## Datos y modelo
 - Clases persistentes: `IRIS105.Patient`, `Physician`, `Box`, `Specialty`, `Appointment`, `AppointmentRisk`.
 - Campos clave para el modelo: PatientId, PhysicianId, BoxId, SpecialtyId, StartDateTime, BookingChannel, BookingDaysInAdvance, HasSMSReminder, Reason.
-- Generador de citas (`IRIS105.Util.MockAppointments`) asigna especialidad y box de forma ciclica y marca `NoShow` al azar (~15% por defecto).
+- Generador de citas (`IRIS105.Util.MockAppointments`) agenda por combinacion de `box + especialidad + hora` (sin domingos), con horario fijo L-V 08:00-18:00 y S 09:00-14:00, y tasa `NoShow` configurable por especialidad.
 
 ## API REST (base: `/csp/mltest`)
 - `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc. Cuando se usa `appointmentId`, persiste/actualiza `IRIS105.AppointmentRisk`.
 - `GET /api/ml/stats/summary`: totales de tablas y estado del modelo por defecto (`NoShowModel2`).
 - `GET /api/ml/stats/model`: informacion de modelos, trained models y runs en INFORMATION_SCHEMA.
 - `POST /api/ml/model/step/execute`: ejecuta paso SQL del flujo de entrenamiento/prediccion (`step` de 1 a 6).
-- `POST /api/ml/mock/generate`: genera datos sintetic (parms opcionales: months, targetOccupancy, seed, patients).
+- `POST /api/ml/mock/generate`: genera datos sintetic (parms opcionales: months, targetOccupancy, seed, patients, clearBeforeGenerate, defaultNoShowRate, specialtyNoShowRates).
 - `GET /api/ml/stats/lastAppointmentByPatient?patientId=...`: busca la ultima cita de un paciente y la puntua.
 - `GET /api/ml/analytics/busiest-day`: fecha con mas citas.
 - `GET /api/ml/analytics/top-specialties?limit=5`: ranking de especialidades por citas/no-show.
@@ -130,7 +158,7 @@ curl -X POST http://localhost:52773/csp/mltest/api/ml/model/step/execute \
 curl -X POST http://localhost:52773/csp/mltest/api/ml/mock/generate \
   -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
-  -d '{"months":3,"targetOccupancy":0.85,"patients":200}'
+  -d '{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}'
 
 # Health check sin token
 curl http://localhost:52773/csp/mltest/api/health
@@ -138,7 +166,7 @@ curl http://localhost:52773/csp/mltest/api/health
 
 ## UI CSP de demo
 - Pagina recomendada (sin auth CSP): `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
-- Nueva agenda visual: `http://localhost:52773/csp/mltest2/GCSP.Agenda.cls` (vista semanal/mensual, filtros por especialidad/medico/paciente, detalle por cita y actualizacion automatica por cambio de filtros).
+- Nueva agenda visual: `http://localhost:52773/csp/mltest2/GCSP.Agenda.cls` (vista semanal/mensual, filtros por especialidad/medico/paciente, celdas por `dia/hora` coloreadas por riesgo agregado de no-show, detalle por cita y actualizacion automatica por cambio de filtros).
 - Base API en la pantalla: `/csp/mltest` (usar token Bearer en el campo "Bearer Token").
 - Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, ver runs/metricas del modelo.
 - Nuevo: bloque "Entrenamiento SQL (paso a paso)" con botones 1..6, `Submit` para ejecutar el paso y ventana de resultados.

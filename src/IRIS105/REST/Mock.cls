@@ -20,6 +20,18 @@ ClassMethod GenerateFromRequest(pRequest As %DynamicObject) As %Status
     If pRequest.%IsDefined("patients") {
         Do config.%Set("patients", pRequest.%Get("patients"))
     }
+    If pRequest.%IsDefined("clearBeforeGenerate") {
+        Do config.%Set("clearBeforeGenerate", +pRequest.%Get("clearBeforeGenerate"))
+    }
+    If pRequest.%IsDefined("defaultNoShowRate") {
+        Do config.%Set("defaultNoShowRate", +pRequest.%Get("defaultNoShowRate"))
+    }
+    If pRequest.%IsDefined("specialtyNoShowRates") {
+        Set rates = pRequest.%Get("specialtyNoShowRates")
+        If $IsObject(rates) {
+            Do config.%Set("specialtyNoShowRates", rates)
+        }
+    }
     Quit ##class(IRIS105.Util.MockData).Generate(config)
 }
 

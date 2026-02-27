@@ -1,5 +1,39 @@
 # Estado del sprint – IRIS105 No-Show
 
+## Actualizacion 2026-02-27 (despliegue de agenda + mock con restricciones)
+- Agenda `GCSP.Agenda` actualizada:
+  - Render por celdas `(dia,hora)` en lugar de lista plana diaria.
+  - Color de fondo de cada celda segun tasa agregada de `NoShow` de las citas contenidas.
+  - Leyenda visual de riesgo (`sin dato`, `0%`, `1-24%`, `25-44%`, `>=45%`).
+- Generacion mock `IRIS105.Util.MockData` y `IRIS105.Util.MockAppointments` actualizada:
+  - Limpieza previa opcional (`clearBeforeGenerate`, default `1`) para regeneracion limpia.
+  - Restricciones de agenda globales para todas las especialidades y boxes:
+    - L-V `08:00-18:00`
+    - S `09:00-14:00`
+    - Domingo excluido
+  - Duracion de cita estandarizada a `60` minutos.
+  - Parametro de `NoShow` por especialidad (`specialtyNoShowRates`) con fallback (`defaultNoShowRate`).
+- API/UI actualizadas:
+  - `POST /api/ml/mock/generate` ahora acepta `clearBeforeGenerate`, `defaultNoShowRate`, `specialtyNoShowRates`.
+  - `GCSP.Basic` agrega input JSON para tasas por especialidad y selector de limpieza previa.
+- Correccion aplicada durante prueba:
+  - Ajuste de compilacion en `IRIS105.Util.MockData.%ExecNonQuery` (eliminado `QUIT` con argumento dentro de bloque no valido).
+
+## Pruebas ejecutadas (2026-02-27)
+- Generacion mock por API:
+  - Payload: `{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}`
+  - Resultado: `5379` citas generadas (`status=ok`).
+- Validacion de reglas horarias:
+  - `SundayRows=0`
+  - `SaturdayOut=0`
+  - `WeekdayOut=0`
+  - `MinuteOut=0`
+  - `DurationOut=0`
+- Validacion de `NoShow` por especialidad:
+  - `SPEC-1`: `0.117386` (objetivo `0.12`)
+  - `SPEC-2`: `0.190853` (objetivo `0.20`)
+  - `SPEC-3`: `0.078246` (objetivo `0.08`)
+
 ## Avance
 - Endpoint `GET /api/ml/analytics/occupancy-weekly` implementado en `IRIS105.REST.NoShowService`: agrupa por specialty/box/physician, valida rango (default últimas 6 semanas), permite `slotsPerDay`, devuelve week `YYYY-Www` con capacity/booked/occupancyRate. Capacidad heurística por día = `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobrescribir con `/api/ml/config/capacity`.
 - Probado vía túnel `https://iris105.htc21.site/csp/mltest` con token demo; respuestas 200 con datos reales.
