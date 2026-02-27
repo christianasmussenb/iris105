@@ -738,7 +738,7 @@ components:
           description: Tasa por defecto de no-show (0-1, default 0.15)
         specialtyNoShowRates:
           type: object
-          description: Mapa opcional `{SpecialtyId: tasaNoShow}` (ej. `SPEC-1 -> 0.12`)
+          description: "Mapa opcional {SpecialtyId => tasaNoShow} (ej. SPEC-1 -> 0.12)"
           additionalProperties:
             type: number
             format: double
