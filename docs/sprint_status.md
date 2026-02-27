@@ -1,5 +1,29 @@
 # Estado del sprint – IRIS105 No-Show
 
+## Actualizacion 2026-02-27 (cierre sprint: publicación internet + smoke tests)
+- Estado de sprint: **cerrado**.
+- Smoke tests REST ejecutados y validados:
+  - `GET /csp/mltest/api/health` -> `200`.
+  - `GET /csp/mltest/api/ml/stats/summary` (Bearer) -> `200`.
+  - `POST /csp/mltest/api/ml/noshow/score` con `appointmentId=APPT-1` -> `200`.
+  - Persistencia confirmada en `IRIS105.AppointmentRisk` vía incremento de `scoredAppointments`.
+- Corrección de navegación CSP revalidada:
+  - Problema detectado: `/csp/mltest2` con `DispatchClass=GCSP.Basic` (interceptaba todas las rutas).
+  - Corrección aplicada en `%SYS` (`Security.Applications`) dejando `DispatchClass=""`.
+  - Resultado validado:
+    - `/csp/mltest2/GCSP.Basic.cls` -> `200`
+    - `/csp/mltest2/GCSP.Agenda.cls` -> `200`
+- Publicación por Cloudflare Tunnel validada:
+  - Host activo: `https://iris105m4.htc21.site`
+  - API pública:
+    - `GET /csp/mltest/api/health` -> `200`
+    - `GET /csp/mltest/api/ml/stats/summary` -> `200`
+  - UI pública:
+    - `https://iris105m4.htc21.site/csp/mltest2/GCSP.Basic.cls`
+- Hallazgo operativo del túnel:
+  - El comando `cloudflared tunnel run iris105-mltest` sin `~/.cloudflared/config.yml` provocó `503`.
+  - Solución estable: ejecutar con `--config /Users/christian/vscode/iris105/docs/config.yml` o copiar config a `~/.cloudflared/config.yml`.
+
 ## Actualizacion 2026-02-27 (despliegue de agenda + mock con restricciones)
 - Agenda `GCSP.Agenda` actualizada:
   - Render por celdas `(dia,hora)` en lugar de lista plana diaria.
@@ -36,7 +60,7 @@
 
 ## Avance
 - Endpoint `GET /api/ml/analytics/occupancy-weekly` implementado en `IRIS105.REST.NoShowService`: agrupa por specialty/box/physician, valida rango (default últimas 6 semanas), permite `slotsPerDay`, devuelve week `YYYY-Www` con capacity/booked/occupancyRate. Capacidad heurística por día = `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobrescribir con `/api/ml/config/capacity`.
-- Probado vía túnel `https://iris105.htc21.site/csp/mltest` con token demo; respuestas 200 con datos reales.
+- Probado vía túnel `https://iris105m4.htc21.site/csp/mltest` con token demo; respuestas 200 con datos reales.
 - `docs/openapi.yaml` (OpenAPI 3.1.0, API `1.0.1`) actualizado con todos los endpoints y esquemas (`OccupancyWeeklyResponse`, `ScheduledPatientsResponse`, `OccupancyTrendResponse`, `ActiveAppointmentsResponse`, `CapacityConfigRequest/Response`) y exclusión explícita de `POST /api/ml/model/step/execute` para Custom GPT.
 - Endpoints implementados: `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active`, `/api/ml/config/capacity` (GET/POST) y OpenAPI actualizado.
 - Clase de setup agregada: `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.

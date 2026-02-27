@@ -9,7 +9,7 @@ info:
     Esta especificación está pensada para Custom GPT y excluye intencionalmente
     `POST /api/ml/model/step/execute` (aunque exista en backend) para no exponerlo vía Actions.
 servers:
-  - url: https://iris105.htc21.site/csp/mltest
+  - url: https://iris105m4.htc21.site/csp/mltest
     description: Via túnel Cloudflare (producción demo)
 security:
   - bearerAuth: []

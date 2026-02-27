@@ -55,6 +55,27 @@ Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando
   - `SPEC-2`: `0.1909` (objetivo `0.20`)
   - `SPEC-3`: `0.0782` (objetivo `0.08`)
 
+### Cierre de sprint (infra + validaciones finales, 2026-02-27)
+- Smoke tests REST ejecutados en local:
+  - `GET /csp/mltest/api/health` -> `200`.
+  - `GET /csp/mltest/api/ml/stats/summary` -> `200` con modelo `NoShowModel2` en estado `completed`.
+  - `POST /csp/mltest/api/ml/noshow/score` con `{"appointmentId":"APPT-1"}` -> `200`; se validó persistencia en `IRIS105.AppointmentRisk` (incremento en `scoredAppointments`).
+- Corrección operativa aplicada en web app CSP:
+  - `/csp/mltest2` tenía `DispatchClass=GCSP.Basic`, lo que hacía que `GCSP.Agenda.cls` renderizara `GCSP.Basic`.
+  - Se corrigió a `DispatchClass=""` en `Security.Applications` y se validó:
+    - `/csp/mltest2/GCSP.Basic.cls` -> `200`
+    - `/csp/mltest2/GCSP.Agenda.cls` -> `200`
+- Publicación por internet validada con Cloudflare Tunnel:
+  - Host público activo: `https://iris105m4.htc21.site`.
+  - API pública validada:
+    - `GET /csp/mltest/api/health` -> `200`
+    - `GET /csp/mltest/api/ml/stats/summary` (Bearer) -> `200`
+  - UI pública validada:
+    - `https://iris105m4.htc21.site/csp/mltest2/GCSP.Basic.cls`
+- Lección operativa clave del túnel:
+  - Si ejecutas `cloudflared tunnel run <nombre>` sin `~/.cloudflared/config.yml`, el host puede responder `503`.
+  - Solución: usar `--config /Users/christian/vscode/iris105/docs/config.yml` o copiar el archivo a `~/.cloudflared/config.yml`.
+
 ## Requisitos rapidos
 - InterSystems IRIS 2024.1 (local o contenedor).
 - Namespace `MLTEST` creado (ver ejemplo abajo).

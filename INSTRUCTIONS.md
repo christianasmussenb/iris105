@@ -1,4 +1,4 @@
-# Instrucciones para Claude Code
+# Instrucciones para Claude Code y CODEX
 
 ## Contexto
 Este es un proyecto InterSystems IRIS en ObjectScript

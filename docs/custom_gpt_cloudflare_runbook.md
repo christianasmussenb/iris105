@@ -48,7 +48,7 @@ Ejemplo de `~/.cloudflared/config.yml`:
 tunnel: <TUNNEL-UUID>
 credentials-file: /Users/<usuario>/.cloudflared/<TUNNEL-UUID>.json
 ingress:
-  - hostname: iris105.htc21.site
+  - hostname: iris105m4.htc21.site
     service: http://localhost:52773
   - service: http_status:404
 ```
@@ -56,8 +56,12 @@ ingress:
 Levantar túnel:
 
 ```bash
-cloudflared tunnel run <NOMBRE-O-UUID-DEL-TUNNEL>
+cloudflared tunnel --config /Users/<usuario>/vscode/iris105/docs/config.yml run <NOMBRE-O-UUID-DEL-TUNNEL>
 ```
+
+Importante:
+- `cloudflared tunnel run <nombre>` solo toma `~/.cloudflared/config.yml` por defecto.
+- Si tu config vive en otro path (por ejemplo `docs/config.yml`), debes pasar `--config ...` o copiar el archivo a `~/.cloudflared/config.yml`.
 
 ### Opción B: quick tunnel (URL efímera)
 
@@ -72,8 +76,8 @@ Si usas URL efímera, actualiza `servers.url` en `docs/openapi.yaml` antes de im
 Con túnel activo:
 
 ```bash
-curl -i --max-time 10 https://iris105.htc21.site/csp/mltest/api/health
-curl -i --max-time 20 https://iris105.htc21.site/csp/mltest/api/ml/stats/summary \
+curl -i --max-time 10 https://iris105m4.htc21.site/csp/mltest/api/health
+curl -i --max-time 20 https://iris105m4.htc21.site/csp/mltest/api/ml/stats/summary \
   -H "Authorization: Bearer demo-readonly-token"
 ```
 
@@ -129,6 +133,7 @@ rg -n "servers:|url:|model/step/execute|excluye intencionalmente" docs/openapi.y
 
 - `401 Missing/Invalid bearer token`: revisar header y existencia en `^IRIS105("API","Tokens",token)`.
 - `404`: revisar prefijo `/csp/mltest` en URL pública.
+- `503` en host Cloudflare con túnel "up": revisar que `cloudflared` esté corriendo con el `config.yml` correcto (si no, el ingress no apunta a `localhost:52773`).
 - `502/5xx` en host Cloudflare: túnel caído o IRIS local no disponible.
 - Warnings al importar OpenAPI: reimportar schema completo y validar indentación YAML.
 - `GCSP.Agenda.cls` muestra `GCSP.Basic`: revisar web app `/csp/mltest2`; debe tener `DispatchClass` vacío (si apunta a `GCSP.Basic`, intercepta todas las rutas).

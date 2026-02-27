@@ -1,0 +1,6 @@
+tunnel: 3291466d-5935-4aad-ad53-6c788e4abe0b
+credentials-file: /Users/christian/.cloudflared/3291466d-5935-4aad-ad53-6c788e4abe0b.json
+ingress:
+  - hostname: iris105m4.htc21.site
+    service: http://localhost:52773
+  - service: http_status:404
