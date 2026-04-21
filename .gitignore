@@ -1,2 +1,8 @@
 .DS_Store
 .env
+.env.local
+iris105-chat/.env
+__pycache__/
+*.pyc
+
+
