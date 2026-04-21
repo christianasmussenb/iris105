@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IRIS105 · Asistente de Agenda</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -81,9 +82,9 @@
       padding: 11px 15px;
       border-radius: var(--radius);
       line-height: 1.55;
-      white-space: pre-wrap;
       word-break: break-word;
     }
+    .msg.user .bubble { white-space: pre-wrap; }
     .msg.user .bubble {
       background: var(--user-bg);
       border-bottom-right-radius: 3px;
@@ -179,6 +180,44 @@
     }
     #send-btn:hover:not(:disabled) { background: var(--accent-dk); }
     #send-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Markdown content ── */
+    .bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 13.5px;
+    }
+    .bubble th, .bubble td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .bubble th {
+      background: #22263a;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .bubble tr:nth-child(even) td { background: #1e2133; }
+    .bubble p  { margin: 4px 0; }
+    .bubble ul, .bubble ol { padding-left: 20px; margin: 4px 0; }
+    .bubble li { margin: 2px 0; }
+    .bubble strong { color: #fff; }
+    .bubble code {
+      background: #12141e;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 12px;
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+    .bubble blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 10px;
+      color: var(--muted);
+      margin: 6px 0;
+    }
+    .bubble hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
 
     /* ── Scrollbar ── */
     #messages::-webkit-scrollbar { width: 5px; }
@@ -314,7 +353,11 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.textContent = text;
+    if (role === 'bot') {
+      bubble.innerHTML = marked.parse(text);
+    } else {
+      bubble.textContent = text;
+    }
 
     const time = document.createElement('span');
     time.className = 'msg-time';
