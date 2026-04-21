@@ -1,215 +1,191 @@
-# IRIS105 - POC de prediccion de No-Show en InterSystems IRIS
+# IRIS105 — POC predicción de No-Show con IntegratedML + Chat en lenguaje natural
 
-Proyecto de muestra para calcular riesgo de inasistencia en citas medicas usando IntegratedML en el namespace `MLTEST`, con API REST de scoring y una pagina CSP basica para demo rapida.
+POC que combina InterSystems IRIS 2024.1, IntegratedML y una app de chat con Claude (Anthropic) para analizar y predecir inasistencias a citas médicas en lenguaje natural.
 
-## Estado del proyecto (fin del sprint)
-- Listo: clases persistentes para pacientes, medicos, boxes, especialidades y citas; generador de datos sintetic (mock) y script de compilacion del paquete.
-- Listo: servicio REST `IRIS105.REST.NoShowService` con endpoints de scoring (`/api/ml/noshow/score`), estadisticas, analytics y health check; pagina CSP `/csp/mltest2/GCSP.Basic.cls` que consume la API.
-- Listo: flujo guiado de entrenamiento SQL en la UI (`GCSP.Basic`) con pasos 1..6, boton `Submit` y panel de resultados.
-- Listo: endpoint `POST /api/ml/model/step/execute` para ejecutar de forma controlada los pasos SQL del modelo desde la UI.
-- Listo: plantillas SQL para el modelo IntegratedML (`sql/NoShow_model.sql`) y consultas de apoyo (`sql/demo_queries.sql`).
-- Listo: endpoints de analytics con trazas incluidas en la respuesta (`debug`) para facilitar integracion con Custom GPT.
-- Listo: endpoints `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active` y `/api/ml/config/capacity` (GET/POST) con OpenAPI actualizado.
-- Listo: clase de setup `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
-- Listo: nueva pagina `GCSP.Agenda` (agenda semanal/mensual con filtros por especialidad/medico/paciente) conectada desde `GCSP.Basic`.
-- Listo: despliegue de agenda por celdas `(dia,hora)` con color de fondo segun tasa de `NoShow` agregada de las citas contenidas en cada celda.
-- Listo: el scoring por `appointmentId` persiste en `IRIS105.AppointmentRisk` con upsert por cita (actualiza si ya existe).
-- Pendiente: pruebas automatizadas, CI/CD y scripts de despliegue/dockers.
-- Pendiente: endurecer autenticacion (las web apps se crean con acceso no autenticado para demo).
+**Namespace**: `MLTEST` · **Imagen Docker**: `intersystemsdc/irishealth-ml-community:latest`
 
-## Avance reciente (sprint)
-- Implementados endpoints `scheduled-patients`, `occupancy-trend`, `appointments/active` y `config/capacity` (GET/POST) en `IRIS105.REST.NoShowService`.
-- Implementado endpoint `POST /api/ml/model/step/execute` para pasos SQL (verificar, crear, entrenar, validar, revisar metricas, predecir).
-- Actualizada `GCSP.Basic` con bloque "Entrenamiento SQL (paso a paso)", botones 1..6, `Submit` y limpieza de resultados al cambiar de paso.
-- Corregida compatibilidad de `INFORMATION_SCHEMA.ML_MODELS` para IRIS 2024.1 (uso de `CREATE_TIMESTAMP`, `PREDICTING_COLUMN_NAME`, `WITH_COLUMNS`; no usar `STATUS`).
-- `occupancy-weekly` y `occupancy-trend` usan capacidad heurística: `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobreescribir con `/api/ml/config/capacity`.
-- OpenAPI actualizado (3.1.0, versión API `1.0.1`) en `docs/openapi.yaml`, con exclusión explícita de `POST /api/ml/model/step/execute` para Custom GPT.
-- Agregada clase `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
-- Ajuste en `IRIS105.Util.WebAppSetup`: `DispatchClass` se setea siempre (incluido vacío) para evitar que `/csp/mltest2` renderice `GCSP.Basic` en todas las rutas.
-- Pendientes priorizados: definir capacidad realista persistente; revisar índices compuestos en `Appointment`; reimportar spec en el GPT y validar warnings; agregar pruebas básicas/curl para los nuevos endpoints.
+---
 
-## Cambios ejecutados y probados (2026-02-27)
-- Agenda `GCSP.Agenda`: se cambió el despliegue por celda `(día,hora)` y se colorea el fondo según tasa agregada de `NoShow` dentro de la celda.
-- Mock data: se aplicaron restricciones horarias globales para todas las especialidades y todos los boxes:
-  - Lunes a viernes: `08:00-18:00`
-  - Sábado: `09:00-14:00`
-  - Domingo: sin agenda
-- Mock data: se incorporó parámetro de `NoShow` por especialidad (`specialtyNoShowRates`) con fallback `defaultNoShowRate`.
-- Mock data: limpieza previa de base antes de regenerar (`clearBeforeGenerate=1`), incluyendo `AppointmentRisk`, `Appointment`, `Physician`, `Patient`, `Box`, `Specialty`, `Payer` y `^IRIS105("Capacity")`.
-- API/UI: `POST /api/ml/mock/generate` y `GCSP.Basic` actualizados para recibir `clearBeforeGenerate`, `defaultNoShowRate` y `specialtyNoShowRates`.
-- Corrección técnica durante pruebas: ajuste en `IRIS105.Util.MockData.%ExecNonQuery` para evitar error de compilación por `QUIT` con argumento inválido.
+## Qué hay en este proyecto
 
-### Evidencia de validación (ejecutada)
-- Generación mock ejecutada con:
-  - `{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}`
-- Resultado de generación:
-  - `4` pagadores, `3` especialidades, `3` boxes, `8` médicos, `200` pacientes, `5379` citas.
-- Validación de restricciones horarias sobre `IRIS105.Appointment`:
-  - `SundayRows=0`
-  - `SaturdayOut=0`
-  - `WeekdayOut=0`
-  - `MinuteOut=0`
-  - `DurationOut=0`
-- Validación de tasa real `NoShow` por especialidad:
-  - `SPEC-1`: `0.1174` (objetivo `0.12`)
-  - `SPEC-2`: `0.1909` (objetivo `0.20`)
-  - `SPEC-3`: `0.0782` (objetivo `0.08`)
+| Componente | Descripción | URL |
+|---|---|---|
+| API REST | 15 endpoints de scoring, analytics y configuración | `/csp/mltest/api/` |
+| UI Basic | Operaciones generales, entrenamiento ML paso a paso | `/csp/mltest2/GCSP.Basic.cls` |
+| UI Agenda | Agenda visual semanal/mensual con riesgo de no-show | `/csp/mltest2/GCSP.Agenda.cls` |
+| Chat app | Preguntas en español respondidas con datos reales de IRIS | `/csp/mlchat/` |
 
-### Cierre de sprint (infra + validaciones finales, 2026-02-27)
-- Smoke tests REST ejecutados en local:
-  - `GET /csp/mltest/api/health` -> `200`.
-  - `GET /csp/mltest/api/ml/stats/summary` -> `200` con modelo `NoShowModel2` en estado `completed`.
-  - `POST /csp/mltest/api/ml/noshow/score` con `{"appointmentId":"APPT-1"}` -> `200`; se validó persistencia en `IRIS105.AppointmentRisk` (incremento en `scoredAppointments`).
-- Corrección operativa aplicada en web app CSP:
-  - `/csp/mltest2` tenía `DispatchClass=GCSP.Basic`, lo que hacía que `GCSP.Agenda.cls` renderizara `GCSP.Basic`.
-  - Se corrigió a `DispatchClass=""` en `Security.Applications` y se validó:
-    - `/csp/mltest2/GCSP.Basic.cls` -> `200`
-    - `/csp/mltest2/GCSP.Agenda.cls` -> `200`
-- Publicación por internet validada con Cloudflare Tunnel:
-  - Host público activo: `https://iris105m4.htc21.site`.
-  - API pública validada:
-    - `GET /csp/mltest/api/health` -> `200`
-    - `GET /csp/mltest/api/ml/stats/summary` (Bearer) -> `200`
-  - UI pública validada:
-    - `https://iris105m4.htc21.site/csp/mltest2/GCSP.Basic.cls`
-- Lección operativa clave del túnel:
-  - Si ejecutas `cloudflared tunnel run <nombre>` sin `~/.cloudflared/config.yml`, el host puede responder `503`.
-  - Solución: usar `--config /Users/christian/vscode/iris105/docs/config.yml` o copiar el archivo a `~/.cloudflared/config.yml`.
+---
 
-## Requisitos rapidos
-- InterSystems IRIS 2024.1 (local o contenedor).
-- Namespace `MLTEST` creado (ver ejemplo abajo).
-- VS Code con extension InterSystems ObjectScript (opcional pero recomendado).
+## Inicio rápido (Docker)
 
-## Puesta en marcha rapida
-1) Crear namespace (ejemplo en un contenedor llamado `iris`):
+Ver la guía completa en `docs/docker-replication-guide.md`. Resumen:
+
 ```bash
-iris session IRIS -U %SYS <<'EOF'
-Do ##class(%SYS.Namespace).Create("MLTEST","USER")
-Do ##class(%EnsembleMgr).EnableNamespace("MLTEST",1)
-Halt
-EOF
-```
-2) Copiar el contenido de `src/` al host o contenedor (ejemplo usa volumen en `/opt/irisapp/iris/src/`).
+# 1. Levantar IRIS
+docker run -d --name iris105 -p 52773:52773 -p 1972:1972 \
+  intersystemsdc/irishealth-ml-community:latest
 
-3) Compilar paquete:
-```objectscript
-Do $system.OBJ.CompilePackage("IRIS105","ckr")
-```
-   O usando Docker: `./scripts/compile_package.sh iris MLTEST`.
+# 2. Crear namespace y compilar
+docker exec iris105 iris session IRIS -U '%SYS' \
+  'Do ##class(%SYS.Namespace).Create("MLTEST","USER") Halt'
+docker cp src/IRIS105 iris105:/tmp/IRIS105
+docker cp src/GCSP    iris105:/tmp/GCSP
+docker exec iris105 iris session IRIS -U MLTEST \
+  'Do $system.OBJ.LoadDir("/tmp/IRIS105","ckr") Do $system.OBJ.LoadDir("/tmp/GCSP","ckr") Halt'
 
-4) Crear web apps (REST + CSP) en `%SYS`:
-```objectscript
-Do ##class(IRIS105.Util.WebAppSetup).ConfigureAll()
-```
-   Nota: `/csp/mltest2` debe quedar sin `DispatchClass` para permitir servir `GCSP.Basic.cls` y `GCSP.Agenda.cls` por ruta.
+# 3. Configurar web apps y token
+docker exec iris105 iris session IRIS -U MLTEST \
+  'Do ##class(IRIS105.Util.WebAppSetup).ConfigureAll() Do ##class(IRIS105.Util.ProjectSetup).Init() Halt'
 
-5) Generar datos mock (limpia base primero; usa 3 meses, 0.85 de ocupacion, 8 medicos, 100 pacientes; horarios L-V 08:00-18:00 y S 09:00-14:00):
-```objectscript
-Do ##class(IRIS105.Util.MockData).Generate()
+# 4. Generar datos y entrenar modelo
+docker exec iris105 iris session IRIS -U MLTEST \
+  'Do ##class(IRIS105.Util.MockData).Generate() Halt'
+# Luego entrenar via UI o API (ver docs/docker-replication-guide.md paso 7)
+
+# 5. Instalar chat app
+docker cp iris105-chat iris105:/opt/iris105-chat
+docker exec iris105 /usr/irissys/bin/irispython -m pip install \
+  fastapi==0.115.0 httpx==0.27.0 anthropic==0.40.0 python-dotenv==1.0.0 a2wsgi==1.10.4
+# Crear /opt/iris105-chat/.env con ANTHROPIC_API_KEY, IRIS_BASE_URL, IRIS_TOKEN
+# Configurar web app /csp/mlchat en Management Portal (ver docs/iris105-chat-setup.md)
 ```
 
-6) Entrenar el modelo IntegratedML (namespace `MLTEST`):
-```sql
-\i sql/NoShow_model.sql
-```
+---
 
-## Datos y modelo
-- Clases persistentes: `IRIS105.Patient`, `Physician`, `Box`, `Specialty`, `Appointment`, `AppointmentRisk`.
-- Campos clave para el modelo: PatientId, PhysicianId, BoxId, SpecialtyId, StartDateTime, BookingChannel, BookingDaysInAdvance, HasSMSReminder, Reason.
-- Generador de citas (`IRIS105.Util.MockAppointments`) agenda por combinacion de `box + especialidad + hora` (sin domingos), con horario fijo L-V 08:00-18:00 y S 09:00-14:00, y tasa `NoShow` configurable por especialidad.
+## Estado del proyecto
+
+- ✅ Clases persistentes: Patient, Physician, Box, Specialty, Appointment, AppointmentRisk
+- ✅ Generador mock con restricciones horarias y tasas NoShow configurables por especialidad
+- ✅ API REST completa (15 endpoints) con autenticación Bearer token
+- ✅ Modelo IntegratedML `NoShowModel2` con scoring y persistencia de resultados
+- ✅ UI CSP: Basic (operaciones, entrenamiento guiado) + Agenda (visual con riesgo ML)
+- ✅ Chat app Python (FastAPI + Claude tool_use) deployada como WSGI en IRIS
+- ✅ OpenAPI 3.1.0 documentado (`docs/openapi.yaml`) para Custom GPT
+- ✅ Cloudflare Tunnel para acceso público (`iris105m4.htc21.site`)
+- ⏳ Configurar subdominio `chat.iris105m4.htc21.site` para el chat
+- ⏳ Capacidad realista persistente por box/especialidad
+- ⏳ Índices compuestos en Appointment para analytics
+- ⏳ Tests automatizados
+
+---
 
 ## API REST (base: `/csp/mltest`)
-- `POST /api/ml/noshow/score`: score por `appointmentId` o por `features` adhoc. Cuando se usa `appointmentId`, persiste/actualiza `IRIS105.AppointmentRisk`.
-- `GET /api/ml/stats/summary`: totales de tablas y estado del modelo por defecto (`NoShowModel2`).
-- `GET /api/ml/stats/model`: informacion de modelos, trained models y runs en INFORMATION_SCHEMA.
-- `POST /api/ml/model/step/execute`: ejecuta paso SQL del flujo de entrenamiento/prediccion (`step` de 1 a 6).
-- `POST /api/ml/mock/generate`: genera datos sintetic (parms opcionales: months, targetOccupancy, seed, patients, clearBeforeGenerate, defaultNoShowRate, specialtyNoShowRates).
-- `GET /api/ml/stats/lastAppointmentByPatient?patientId=...`: busca la ultima cita de un paciente y la puntua.
-- `GET /api/ml/analytics/busiest-day`: fecha con mas citas.
-- `GET /api/ml/analytics/top-specialties?limit=5`: ranking de especialidades por citas/no-show.
-- `GET /api/ml/analytics/top-physicians?limit=5`: ranking de medicos por citas/no-show.
-- `GET /api/ml/analytics/top-noshow?by=physician|specialty&limit=5`: ranking por tasa de no-show.
-- `GET /api/ml/analytics/occupancy-weekly`: ocupacion semanal por grupo.
-- `GET /api/ml/analytics/scheduled-patients`: citas agendadas con filtros por box/especialidad/nombres.
-- `GET /api/ml/analytics/occupancy-trend`: ocupacion semanal agregada (ultimas N semanas).
-- `GET /api/ml/appointments/active`: citas activas en un rango de fechas.
-- `GET|POST /api/ml/config/capacity`: capacidad base por box/especialidad/medico.
-- `GET /api/health`: health check simple del servicio REST.
 
-Ejemplos:
+Todos los endpoints requieren `Authorization: Bearer <token>` excepto `/api/health`.
+
 ```bash
-# Score por cita
+# Token de demo (inicializado por ProjectSetup.Init)
+# Bearer demo-readonly-token
+
+# Health check
+curl http://localhost:52773/csp/mltest/api/health
+
+# Resumen general
+curl -H "Authorization: Bearer demo-readonly-token" \
+     http://localhost:52773/csp/mltest/api/ml/stats/summary
+
+# Score por appointmentId
 curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
   -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
   -d '{"appointmentId":"APPT-1"}'
 
-# Score con payload adhoc
+# Score adhoc
 curl -X POST http://localhost:52773/csp/mltest/api/ml/noshow/score \
   -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
-  -d '{
-        "features":{
-          "PatientId":10,
-          "PhysicianId":3,
-          "BoxId":2,
-          "SpecialtyId":1,
-          "StartDateTime":"2025-11-18 10:30:00",
-          "BookingChannel":"WEB",
-          "BookingDaysInAdvance":5,
-          "HasSMSReminder":1,
-          "Reason":"Control post operatorio"
-        }
-      }'
+  -d '{"features":{"PatientId":10,"PhysicianId":"PHY-3","BoxId":"BOX-2","SpecialtyId":"SPEC-1",
+       "StartDateTime":"2025-11-18 10:30:00","BookingChannel":"WEB",
+       "BookingDaysInAdvance":5,"HasSMSReminder":1,"Reason":"Control"}}'
 
-# Estadisticas y runs
-curl http://localhost:52773/csp/mltest/api/ml/stats/summary \
-  -H "Authorization: Bearer demo-readonly-token"
-curl http://localhost:52773/csp/mltest/api/ml/stats/model \
-  -H "Authorization: Bearer demo-readonly-token"
-
-# Ejecutar un paso SQL del flujo guiado (1..6)
-curl -X POST http://localhost:52773/csp/mltest/api/ml/model/step/execute \
-  -H "Authorization: Bearer demo-readonly-token" \
-  -H "Content-Type: application/json" \
-  -d '{"step":3}'
+# Analytics
+curl -H "Authorization: Bearer demo-readonly-token" \
+     "http://localhost:52773/csp/mltest/api/ml/analytics/top-noshow?by=specialty&limit=3"
 
 # Generar mock adicional
 curl -X POST http://localhost:52773/csp/mltest/api/ml/mock/generate \
   -H "Authorization: Bearer demo-readonly-token" \
   -H "Content-Type: application/json" \
-  -d '{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}'
-
-# Health check sin token
-curl http://localhost:52773/csp/mltest/api/health
+  -d '{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,
+       "specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}'
 ```
 
-## UI CSP de demo
-- Pagina recomendada (sin auth CSP): `http://localhost:52773/csp/mltest2/GCSP.Basic.cls`
-- Nueva agenda visual: `http://localhost:52773/csp/mltest2/GCSP.Agenda.cls` (vista semanal/mensual, filtros por especialidad/medico/paciente, celdas por `dia/hora` coloreadas por riesgo agregado de no-show, detalle por cita y actualizacion automatica por cambio de filtros).
-- Base API en la pantalla: `/csp/mltest` (usar token Bearer en el campo "Bearer Token").
-- Acciones: ver estadisticas, score por cita, score ultima cita por paciente, generar mock, ver runs/metricas del modelo.
-- Nuevo: bloque "Entrenamiento SQL (paso a paso)" con botones 1..6, `Submit` para ejecutar el paso y ventana de resultados.
+### Endpoints disponibles
 
-## Notas para Custom GPT y uso de endpoints
-- Autenticacion: `Authorization: Bearer <token>`, validado contra `^IRIS105("API","Tokens",token)` en el namespace de la web app (MLTEST). Cargar el token con `Set ^IRIS105("API","Tokens","demo-readonly-token")=1`.
-- Compatibilidad IRIS 2024.1: en `INFORMATION_SCHEMA.ML_MODELS` usar `CREATE_TIMESTAMP` (no `STATUS`) y columnas `PREDICTING_COLUMN_NAME`, `PREDICTING_COLUMN_TYPE`, `WITH_COLUMNS`.
-- Lectura de parametros: usar query string (`?by=...&limit=...`) o JSON (`by`, `limit` en el body). El endpoint usa `%request.Data(...)` y fallback a `QUERY_STRING` para evitar errores de propiedades inexistentes.
-- Trazas: los endpoints de analytics incluyen `debug` en la respuesta con pasos (`step=...`), el SQL y cada fila procesada (id, citas, noShow, tasa). Dejarlo activo para facilitar integracion y troubleshooting en el GPT.
-- OpenAPI para GPT: `docs/openapi.yaml` excluye intencionalmente `POST /api/ml/model/step/execute`; ese endpoint sigue disponible en backend/UI pero no en Actions del Custom GPT.
-- Evitar `TOP ?` parametrizado: concatenar el limite en el SQL o cortar en memoria; algunas versiones de IRIS no soportan `TOP ?` y provocan errores de parseo/caché.
-- En caso de cambios de clase, recompilar y purgar cache de consultas: `Do $system.OBJ.Compile("IRIS105.REST.NoShowService","ck")` y `Do $SYSTEM.SQL.Purge()`.
-- Objetivo de despliegue: exponer la API como Actions para un Custom GPT, usando los endpoints anteriores (incluyendo `debug` en analytics) y el health check `/api/health` para verificaciones rapidas.
+| Grupo | Endpoint |
+|---|---|
+| Scoring | `POST /api/ml/noshow/score` |
+| Stats | `GET /api/ml/stats/summary`, `GET /api/ml/stats/model`, `GET /api/ml/stats/lastAppointmentByPatient` |
+| Analytics | `GET /api/ml/analytics/busiest-day`, `top-specialties`, `top-physicians`, `top-noshow`, `occupancy-weekly`, `scheduled-patients`, `occupancy-trend` |
+| Appointments | `GET /api/ml/appointments/active` |
+| Config | `GET|POST /api/ml/config/capacity` |
+| Modelo | `POST /api/ml/model/step/execute` (steps 1-6, excluido del Custom GPT) |
+| Mock | `POST /api/ml/mock/generate` |
+| Health | `GET /api/health` |
 
-## Scripts y utilitarios
-- `scripts/compile_package.sh`: compila el paquete `IRIS105` dentro de un contenedor Docker (`./scripts/compile_package.sh iris MLTEST`).
-- `IRIS105.Util.WebAppSetup`: crea/actualiza las Web Applications REST y CSP (`ConfigureAll` o `Upsert`).
-- `IRIS105.Util.ProjectSetup`: inicializa globals del proyecto (tokens y capacidad base) con `Init`.
+---
 
-## Documentacion relacionada
-- `docs/arquitectura.md`: vision funcional del POC y flujos.
-- `docs/sprint1_setup.md`: pasos de setup inicial y compilacion.
-- `docs/demo_script.md`: guion rapido de demo (SQL + cURL).
-- `docs/custom_gpt_cloudflare_runbook.md`: despliegue de localhost a Cloudflare Tunnel e import de `openapi.yaml` en Custom GPT.
-- `BUENAS_PRACTICAS_IRIS_COMBINADAS.md`: guia general de buenas practicas para proyectos IRIS.
+## Chat app (`/csp/mlchat/`)
+
+App web en lenguaje natural. El usuario escribe preguntas en español; Claude llama las tools necesarias y devuelve respuestas interpretadas con tablas y formato.
+
+```bash
+# Health
+curl http://localhost:52773/csp/mlchat/health
+
+# Pregunta directa
+curl -X POST http://localhost:52773/csp/mlchat/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"¿qué especialidad tiene más inasistencias?","history":[]}'
+```
+
+Ver `docs/iris105-chat-setup.md` para instalación detallada.
+
+---
+
+## Autenticación
+
+- Validación contra global: `^IRIS105("API","Tokens",token)`
+- Agregar token: `Set ^IRIS105("API","Tokens","mi-token")=1`
+- Token de demo inicializado por `ProjectSetup.Init()`: `demo-readonly-token`
+
+---
+
+## Notas de compatibilidad IRIS 2024.1
+
+- `INFORMATION_SCHEMA.ML_MODELS`: usar `CREATE_TIMESTAMP` (no `STATUS`); columnas `PREDICTING_COLUMN_NAME`, `WITH_COLUMNS`
+- `TOP ?` parametrizado no soportado: concatenar el límite en el SQL
+- Después de cambios de clase: `Do $system.OBJ.Compile("...","ck")` + `Do $SYSTEM.SQL.Purge()`
+- Web app CSP `/csp/mltest2`: debe tener `DispatchClass` vacío para servir múltiples `.cls` por ruta
+
+---
+
+## Documentación relacionada
+
+| Documento | Contenido |
+|---|---|
+| `docs/docker-replication-guide.md` | **Guía completa para replicar en otro IRIS desde cero** |
+| `docs/iris105-chat-setup.md` | Instalación y configuración detallada del chat app |
+| `docs/arquitectura.md` | Visión funcional y diagrama de componentes |
+| `docs/custom_gpt_cloudflare_runbook.md` | Despliegue con Cloudflare Tunnel + Custom GPT |
+| `docs/openapi.yaml` | Especificación OpenAPI 3.1.0 completa |
+| `docs/demo_script.md` | Guion rápido de demo (SQL + cURL) |
+| `docs/sprint_status.md` | Historial de avances y pendientes |
+| `BUENAS_PRACTICAS_IRIS_COMBINADAS.md` | Guía de buenas prácticas para proyectos IRIS |
+
+---
+
+## Scripts útiles
+
+```bash
+# Compilar paquete completo
+./scripts/compile_package.sh iris105 MLTEST
+
+# Actualizar chat app en el contenedor
+docker cp iris105-chat/main.py       iris105:/opt/iris105-chat/main.py
+docker cp iris105-chat/static/index.html iris105:/opt/iris105-chat/static/index.html
+
+# Ver logs del chat (desde IRIS WSGI, los errores van al log de IRIS)
+docker exec iris105 cat /usr/irissys/mgr/MLTEST/IRIS.log | tail -30
+```

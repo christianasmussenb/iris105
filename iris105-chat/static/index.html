@@ -316,7 +316,8 @@
     const typingEl = appendTyping();
 
     try {
-      const res = await fetch('/chat', {
+      const base = window.location.pathname.replace(/\/[^/]*$/, '');
+      const res = await fetch(base + '/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, history: serializableHistory() }),

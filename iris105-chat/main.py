@@ -1,6 +1,7 @@
 import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import anthropic
 from dotenv import load_dotenv
@@ -9,11 +10,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+_BASE_DIR = Path(__file__).parent
+load_dotenv(_BASE_DIR / ".env")
+
 import iris_client
 from system_prompt import SYSTEM_PROMPT
 from tools import TOOLS
-
-load_dotenv()
 
 _anthropic = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 MODEL = "claude-sonnet-4-6"
@@ -26,7 +28,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="IRIS105 Chat", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(_BASE_DIR / "static")), name="static")
 
 
 class ChatRequest(BaseModel):
@@ -46,7 +48,7 @@ async def health():
 
 @app.get("/")
 async def index():
-    return FileResponse("static/index.html")
+    return FileResponse(str(_BASE_DIR / "static" / "index.html"))
 
 
 @app.post("/chat", response_model=ChatResponse)

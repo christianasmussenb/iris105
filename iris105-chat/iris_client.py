@@ -1,8 +1,9 @@
 import httpx
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 IRIS_BASE_URL = os.getenv("IRIS_BASE_URL", "http://localhost:52773/csp/mltest")
 IRIS_TOKEN    = os.getenv("IRIS_TOKEN", "demo-readonly-token")

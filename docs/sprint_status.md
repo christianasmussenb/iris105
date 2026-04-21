@@ -1,89 +1,74 @@
 # Estado del sprint – IRIS105 No-Show
 
-## Actualizacion 2026-02-27 (cierre sprint: publicación internet + smoke tests)
-- Estado de sprint: **cerrado**.
-- Smoke tests REST ejecutados y validados:
-  - `GET /csp/mltest/api/health` -> `200`.
-  - `GET /csp/mltest/api/ml/stats/summary` (Bearer) -> `200`.
-  - `POST /csp/mltest/api/ml/noshow/score` con `appointmentId=APPT-1` -> `200`.
-  - Persistencia confirmada en `IRIS105.AppointmentRisk` vía incremento de `scoredAppointments`.
-- Corrección de navegación CSP revalidada:
-  - Problema detectado: `/csp/mltest2` con `DispatchClass=GCSP.Basic` (interceptaba todas las rutas).
-  - Corrección aplicada en `%SYS` (`Security.Applications`) dejando `DispatchClass=""`.
-  - Resultado validado:
-    - `/csp/mltest2/GCSP.Basic.cls` -> `200`
-    - `/csp/mltest2/GCSP.Agenda.cls` -> `200`
-- Publicación por Cloudflare Tunnel validada:
-  - Host activo: `https://iris105m4.htc21.site`
-  - API pública:
-    - `GET /csp/mltest/api/health` -> `200`
-    - `GET /csp/mltest/api/ml/stats/summary` -> `200`
-  - UI pública:
-    - `https://iris105m4.htc21.site/csp/mltest2/GCSP.Basic.cls`
-- Hallazgo operativo del túnel:
-  - El comando `cloudflared tunnel run iris105-mltest` sin `~/.cloudflared/config.yml` provocó `503`.
-  - Solución estable: ejecutar con `--config /Users/christian/vscode/iris105/docs/config.yml` o copiar config a `~/.cloudflared/config.yml`.
+## Sprint actual — Chat App (2026-04-21)
+
+### Completado
+
+**iris105-chat**: app web de chat en lenguaje natural sobre los datos de IRIS.
+
+Archivos creados en `iris105-chat/`:
+- `wsgi.py` — entry point WSGI para IRIS Web Gateway (wrappea FastAPI con `a2wsgi`)
+- `main.py` — FastAPI con endpoints `GET /`, `GET /health`, `POST /chat` (loop tool_use)
+- `iris_client.py` — dispatcher de 12 tools hacia IRIS REST API
+- `tools.py` — definiciones de tools para Claude con descriptions optimizadas
+- `system_prompt.py` — contexto del dominio en español
+- `static/index.html` — chat UI vanilla JS con markdown rendering, historial en sessionStorage
+- `requirements.txt`, `Dockerfile`, `.env.example`
+
+**Decisión de arquitectura**: app deployada dentro del IRIS Web Gateway usando WSGI Experimental.
+- Elimina necesidad de segundo contenedor, segundo puerto y gestión de CORS
+- Archivos en `/opt/iris105-chat/` dentro del contenedor Docker
+- Web App en `/csp/mlchat` (NameSpace MLTEST, sin auth, WSGI invocable: `wsgi.app`)
+
+**Fixes aplicados durante implementación**:
+1. `load_dotenv()` usa `Path(__file__).parent / ".env"` — funciona bajo IRIS WSGI donde el working dir no es el directorio de la app
+2. `StaticFiles` y `FileResponse` usan paths absolutos (`_BASE_DIR = Path(__file__).parent`)
+3. `load_dotenv()` se llama antes de `import iris_client` — las constantes de módulo se evalúan al importar
+4. `fetch('/chat')` en UI cambiado a path relativo detectado por `window.location.pathname` — funciona bajo cualquier path prefix de IRIS
+5. Serialización del historial: `response.content` del SDK Anthropic se convierte con `block.model_dump()` antes de devolver al cliente (evita error `MockValSer` de Pydantic)
+
+**Rendering de tablas**: `marked.js` (CDN) renderiza markdown a HTML en respuestas del bot. Tablas con estilo oscuro, filas alternadas, cabeceras en azul.
+
+### Probado y funcionando
+
+- Preguntas simples: "¿cuántos pacientes hay?" → tool `stats_summary` → respuesta con tabla
+- Preguntas analíticas: "¿qué especialidad tiene más inasistencias?" → tool `top_noshow` → ranking
+- Conversación con contexto: segunda pregunta referencia la primera correctamente
+- Historial persiste durante la sesión (sessionStorage)
+- Funcionamiento en modo standalone (uvicorn local) y bajo IRIS WSGI
+
+---
 
 ## Actualizacion 2026-02-27 (despliegue de agenda + mock con restricciones)
-- Agenda `GCSP.Agenda` actualizada:
-  - Render por celdas `(dia,hora)` en lugar de lista plana diaria.
-  - Color de fondo de cada celda segun tasa agregada de `NoShow` de las citas contenidas.
-  - Leyenda visual de riesgo (`sin dato`, `0%`, `1-24%`, `25-44%`, `>=45%`).
-- Generacion mock `IRIS105.Util.MockData` y `IRIS105.Util.MockAppointments` actualizada:
-  - Limpieza previa opcional (`clearBeforeGenerate`, default `1`) para regeneracion limpia.
-  - Restricciones de agenda globales para todas las especialidades y boxes:
-    - L-V `08:00-18:00`
-    - S `09:00-14:00`
-    - Domingo excluido
-  - Duracion de cita estandarizada a `60` minutos.
-  - Parametro de `NoShow` por especialidad (`specialtyNoShowRates`) con fallback (`defaultNoShowRate`).
-- API/UI actualizadas:
-  - `POST /api/ml/mock/generate` ahora acepta `clearBeforeGenerate`, `defaultNoShowRate`, `specialtyNoShowRates`.
-  - `GCSP.Basic` agrega input JSON para tasas por especialidad y selector de limpieza previa.
-- Correccion aplicada durante prueba:
-  - Ajuste de compilacion en `IRIS105.Util.MockData.%ExecNonQuery` (eliminado `QUIT` con argumento dentro de bloque no valido).
 
-## Pruebas ejecutadas (2026-02-27)
-- Generacion mock por API:
-  - Payload: `{"months":3,"targetOccupancy":0.85,"patients":200,"clearBeforeGenerate":1,"specialtyNoShowRates":{"SPEC-1":0.12,"SPEC-2":0.20,"SPEC-3":0.08}}`
-  - Resultado: `5379` citas generadas (`status=ok`).
-- Validacion de reglas horarias:
-  - `SundayRows=0`
-  - `SaturdayOut=0`
-  - `WeekdayOut=0`
-  - `MinuteOut=0`
-  - `DurationOut=0`
-- Validacion de `NoShow` por especialidad:
-  - `SPEC-1`: `0.117386` (objetivo `0.12`)
-  - `SPEC-2`: `0.190853` (objetivo `0.20`)
-  - `SPEC-3`: `0.078246` (objetivo `0.08`)
+- Agenda `GCSP.Agenda`: render por celdas `(dia,hora)`, color de fondo segun tasa `NoShow`, leyenda visual.
+- Mock data: restricciones horarias L-V `08:00-18:00`, S `09:00-14:00`, sin domingos; duración 60 min; tasa NoShow por especialidad.
+- API/UI: `POST /api/ml/mock/generate` acepta `clearBeforeGenerate`, `defaultNoShowRate`, `specialtyNoShowRates`.
+- Corrección: `IRIS105.Util.MockData.%ExecNonQuery` — `QUIT` con argumento inválido removido.
 
-## Avance
-- Endpoint `GET /api/ml/analytics/occupancy-weekly` implementado en `IRIS105.REST.NoShowService`: agrupa por specialty/box/physician, valida rango (default últimas 6 semanas), permite `slotsPerDay`, devuelve week `YYYY-Www` con capacity/booked/occupancyRate. Capacidad heurística por día = `slotsPerDay x 3 pacientes/hora x factor` (1 para box/médico, #médicos para specialty); se puede sobrescribir con `/api/ml/config/capacity`.
-- Probado vía túnel `https://iris105m4.htc21.site/csp/mltest` con token demo; respuestas 200 con datos reales.
-- `docs/openapi.yaml` (OpenAPI 3.1.0, API `1.0.1`) actualizado con todos los endpoints y esquemas (`OccupancyWeeklyResponse`, `ScheduledPatientsResponse`, `OccupancyTrendResponse`, `ActiveAppointmentsResponse`, `CapacityConfigRequest/Response`) y exclusión explícita de `POST /api/ml/model/step/execute` para Custom GPT.
-- Endpoints implementados: `/api/ml/analytics/scheduled-patients`, `/api/ml/analytics/occupancy-trend`, `/api/ml/appointments/active`, `/api/ml/config/capacity` (GET/POST) y OpenAPI actualizado.
-- Clase de setup agregada: `IRIS105.Util.ProjectSetup` para inicializar globals de tokens y capacidad base.
-- Nuevo endpoint `POST /api/ml/model/step/execute` para ejecutar el flujo SQL guiado del modelo (`step` 1..6).
-- UI `GCSP.Basic` actualizada con sección "Entrenamiento SQL (paso a paso)": botones 1..6, botón `Submit` y panel de resultados; al cambiar de paso se limpia la ventana de respuesta.
-- Nueva UI `GCSP.Agenda` (`/csp/mltest2/GCSP.Agenda.cls`): agenda semanal/mensual con filtros por especialidad, médico y paciente; detalle por cita y recarga automática.
-- Corregido problema de navegación CSP: `/csp/mltest2` no debe tener `DispatchClass=GCSP.Basic`; se ajustó `IRIS105.Util.WebAppSetup` para setear `DispatchClass` siempre (incluido vacío) y evitar que todas las rutas rendericen Basic.
-- Ajuste de compatibilidad en consultas de `INFORMATION_SCHEMA.ML_MODELS`: reemplazo de `STATUS` por `CREATE_TIMESTAMP` y uso de `PREDICTING_COLUMN_NAME`, `PREDICTING_COLUMN_TYPE`, `WITH_COLUMNS`.
-- Validado en ambiente local: `/api/health`, `/api/ml/stats/summary`, `/api/ml/stats/model` y `/api/ml/model/step/execute` respondiendo 200.
+### Pruebas ejecutadas (2026-02-27)
+- Mock: `5379` citas (`months=3, occupancy=0.85, patients=200`).
+- Validación horaria: `SundayRows=0`, `SaturdayOut=0`, `WeekdayOut=0`, `MinuteOut=0`, `DurationOut=0`.
+- NoShow real: SPEC-1 `0.1174` (obj `0.12`), SPEC-2 `0.1909` (obj `0.20`), SPEC-3 `0.0782` (obj `0.08`).
 
-## Pendientes prioritarios
-1) Capacidad realista: definir/guardar capacidad por box/especialidad (tabla/config) para que `occupancyRate` solo supere 1 en sobrecupo real; revisar interacciones con `config/capacity`.
-2) Performance: evaluar índices compuestos en `IRIS105.Appointment` sobre `StartDateTime` + (`SpecialtyId`/`BoxId`/`PhysicianId`) para analytics por rango.
-3) OpenAPI/GPT: reimportar `docs/openapi.yaml` en el Custom GPT (sin `model/step/execute`) y corregir cualquier warning residual.
-4) Pruebas: scripts curl o tests básicos para nuevos endpoints; validar errores por rangos inválidos y groupBy.
+---
 
-## Uso rápido del nuevo endpoint
-- `GET /api/ml/analytics/occupancy-weekly?groupBy=specialty&startDate=2025-12-01&endDate=2026-01-31&slotsPerDay=8`
-- Header: `Authorization: Bearer <token>`
-- Notas: `occupancyRate` puede ser >1 si la capacidad heurística es baja; ajustar `slotsPerDay` o definir capacidades específicas.
+## Avance previo
 
-## Uso rápido del endpoint de ejecución SQL guiada
-- `POST /api/ml/model/step/execute`
-- Header: `Authorization: Bearer <token>`
-- Body de ejemplo: `{"step":3}`
-- Respuesta: incluye `status`, `sql` ejecutado y `rows`/`metrics` según el paso.
+- Endpoints analytics: `occupancy-weekly`, `scheduled-patients`, `occupancy-trend`, `appointments/active`, `config/capacity`.
+- `docs/openapi.yaml` v1.0.1 (OpenAPI 3.1.0) completo; excluye `model/step/execute` del Custom GPT.
+- `IRIS105.Util.ProjectSetup`: inicializa globals de tokens y capacidad.
+- `POST /api/ml/model/step/execute`: flujo SQL guiado steps 1-6.
+- `GCSP.Agenda`: agenda visual con filtros.
+- Fix: `/csp/mltest2` sin `DispatchClass`.
+- Fix: `INFORMATION_SCHEMA.ML_MODELS` — usar `CREATE_TIMESTAMP`, no `STATUS`.
+
+---
+
+## Pendientes
+
+1. **Cloudflare**: configurar `chat.iris105m4.htc21.site` → `/csp/mlchat/` para acceso público.
+2. **Capacidad realista**: persistir configuración de slots por box/especialidad.
+3. **Índices**: compuestos en `IRIS105.Appointment` sobre `StartDateTime + SpecialtyId/BoxId/PhysicianId`.
+4. **Tests**: scripts curl para endpoints nuevos; validar errores por rangos inválidos.
+5. **Seguridad**: endurecer autenticación para producción.
