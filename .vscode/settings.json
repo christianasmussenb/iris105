@@ -2,6 +2,7 @@
     "objectscript.conn": {
         "server": "localhost",
         "ns": "MLTEST",
-        "active": true
-    }
+        "active": false
+    },
+    "python.terminal.useEnvFile": true
 }
