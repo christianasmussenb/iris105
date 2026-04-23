@@ -103,12 +103,16 @@ docker cp iris105-chat <nombre-contenedor>:/opt/iris105-chat
 
 ### 2. Crear el `.env` dentro del contenedor
 
+> `docker exec bash -c 'cat > ...'` falla con **Permission denied** si el directorio pertenece al usuario 501 del host (caso típico con `docker cp` desde Mac). Usar `docker cp` desde el host en su lugar:
+
 ```bash
-docker exec <nombre-contenedor> bash -c 'cat > /opt/iris105-chat/.env << EOF
+cat > /tmp/iris105-chat.env << 'EOF'
 ANTHROPIC_API_KEY=sk-ant-...tu-key...
 IRIS_BASE_URL=http://localhost:52773/csp/mltest
 IRIS_TOKEN=demo-readonly-token
-EOF'
+EOF
+docker cp /tmp/iris105-chat.env <nombre-contenedor>:/opt/iris105-chat/.env
+rm /tmp/iris105-chat.env
 ```
 
 ### 3. Instalar dependencias con irispython
@@ -116,10 +120,11 @@ EOF'
 ```bash
 docker exec <nombre-contenedor> /usr/irissys/bin/irispython -m pip install \
   fastapi==0.115.0 httpx==0.27.0 anthropic==0.40.0 \
-  python-dotenv==1.0.0 a2wsgi==1.10.4
+  python-dotenv==1.0.0 a2wsgi==1.10.4 flask
 ```
 
-> No instalar `uvicorn` — no se usa en modo WSGI de IRIS.
+> - No instalar `uvicorn` — no se usa en modo WSGI de IRIS.
+> - `flask` es requerido aunque no se usa directamente: IRIS WSGI Experimental valida la presencia de un framework conocido (flask o django) al configurar la Web App. Sin él, el portal muestra "Unable to find a WSGI framework".
 
 ### 4. Verificar que la app carga
 
@@ -244,3 +249,5 @@ Excluidas intencionalmente: `generate_mock_data`, `capacity_config` (operaciones
 | Variables de entorno vacías en `iris_client.py` | Las constantes de módulo se evalúan antes de `load_dotenv()` en main.py | Llamar `load_dotenv()` al inicio de `iris_client.py` también |
 | `MockValSer` / error de serialización Pydantic | `response.content` del SDK Anthropic contiene objetos no-dict | Convertir con `block.model_dump()` antes de devolver al cliente |
 | App no carga en IRIS WSGI | FastAPI es ASGI, no WSGI | Usar `a2wsgi.ASGIMiddleware(app)` como callable en `wsgi.py` |
+| "Unable to find a WSGI framework" en Management Portal | IRIS verifica presencia de flask o django antes de activar WSGI | `irispython -m pip install flask` (no se usa en la app, solo satisface el check) |
+| `Permission denied` al crear `.env` con `docker exec bash -c` | Directorio copiado con `docker cp` desde Mac pertenece al uid 501 del host, no a `irisowner` | Crear `.env` en el host y copiarlo con `docker cp` |

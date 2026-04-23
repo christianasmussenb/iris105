@@ -1,6 +1,6 @@
 # Estado del sprint – IRIS105 No-Show
 
-## Sprint actual — Chat App (2026-04-21)
+## Sprint actual — Chat App desplegada (2026-04-23)
 
 ### Completado
 
@@ -20,6 +20,12 @@ Archivos creados en `iris105-chat/`:
 - Archivos en `/opt/iris105-chat/` dentro del contenedor Docker
 - Web App en `/csp/mlchat` (NameSpace MLTEST, sin auth, WSGI invocable: `wsgi.app`)
 
+**Despliegue productivo (2026-04-23)**:
+- `.env` creado en el contenedor vía `docker cp` (el directorio pertenece al usuario 501 del host, no a `irisowner` — `docker exec bash -c` falla con Permission denied; usar `docker cp` desde el host)
+- `flask` instalado con irispython: IRIS WSGI Experimental valida la presencia de un framework conocido (flask/django) antes de activar la Web App; sin él muestra "Unable to find a WSGI framework"
+- Web App `/csp/mlchat` configurada en Management Portal con WSGI Experimental activo
+- Chat accesible en `https://iris105m4.htc21.site/csp/mlchat/` — el tunnel `iris105-mltest` ya cubre el puerto 52773 completo, no requiere entrada adicional en config
+
 **Fixes aplicados durante implementación**:
 1. `load_dotenv()` usa `Path(__file__).parent / ".env"` — funciona bajo IRIS WSGI donde el working dir no es el directorio de la app
 2. `StaticFiles` y `FileResponse` usan paths absolutos (`_BASE_DIR = Path(__file__).parent`)
@@ -36,6 +42,7 @@ Archivos creados en `iris105-chat/`:
 - Conversación con contexto: segunda pregunta referencia la primera correctamente
 - Historial persiste durante la sesión (sessionStorage)
 - Funcionamiento en modo standalone (uvicorn local) y bajo IRIS WSGI
+- Chat accesible públicamente vía Cloudflare Tunnel: `https://iris105m4.htc21.site/csp/mlchat/`
 
 ---
 
@@ -67,8 +74,8 @@ Archivos creados en `iris105-chat/`:
 
 ## Pendientes
 
-1. **Cloudflare**: configurar `chat.iris105m4.htc21.site` → `/csp/mlchat/` para acceso público.
-2. **Capacidad realista**: persistir configuración de slots por box/especialidad.
-3. **Índices**: compuestos en `IRIS105.Appointment` sobre `StartDateTime + SpecialtyId/BoxId/PhysicianId`.
-4. **Tests**: scripts curl para endpoints nuevos; validar errores por rangos inválidos.
-5. **Seguridad**: endurecer autenticación para producción.
+1. **Capacidad realista**: persistir configuración de slots por box/especialidad.
+2. **Índices**: compuestos en `IRIS105.Appointment` sobre `StartDateTime + SpecialtyId/BoxId/PhysicianId`.
+3. **Tests**: scripts curl para endpoints nuevos; validar errores por rangos inválidos.
+4. **Seguridad**: endurecer autenticación del chat para producción (actualmente sin auth).
+5. **Scoring masivo**: ejecutar `score_noshow` sobre citas activas (`scoredAppointments` actual: 0).

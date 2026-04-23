@@ -189,12 +189,16 @@ docker cp iris105-chat iris105:/opt/iris105-chat
 
 ### 8.2 Crear `.env` dentro del contenedor
 
+> `docker exec bash -c 'cat > ...'` falla con **Permission denied** si el directorio fue copiado con `docker cp` desde Mac (pertenece al usuario 501 del host, no a `irisowner`). Usar `docker cp` desde el host:
+
 ```bash
-docker exec iris105 bash -c 'cat > /opt/iris105-chat/.env << EOF
+cat > /tmp/iris105-chat.env << 'EOF'
 ANTHROPIC_API_KEY=sk-ant-...tu-clave-aqui...
 IRIS_BASE_URL=http://localhost:52773/csp/mltest
 IRIS_TOKEN=demo-readonly-token
-EOF'
+EOF
+docker cp /tmp/iris105-chat.env iris105:/opt/iris105-chat/.env
+rm /tmp/iris105-chat.env
 ```
 
 ### 8.3 Instalar dependencias con irispython
@@ -202,8 +206,10 @@ EOF'
 ```bash
 docker exec iris105 /usr/irissys/bin/irispython -m pip install \
   fastapi==0.115.0 httpx==0.27.0 anthropic==0.40.0 \
-  python-dotenv==1.0.0 a2wsgi==1.10.4
+  python-dotenv==1.0.0 a2wsgi==1.10.4 flask
 ```
+
+> `flask` es requerido aunque no se usa en la app: IRIS WSGI Experimental valida la presencia de un framework conocido al activar la Web App. Sin él, el portal muestra "Unable to find a WSGI framework" y no permite guardar.
 
 ### 8.4 Verificar que la app carga
 
@@ -318,7 +324,7 @@ cloudflared tunnel run iris105
 | API REST | `http://localhost:52773/csp/mltest/api/` | `https://mi-iris.ejemplo.com/csp/mltest/api/` |
 | UI Basic | `http://localhost:52773/csp/mltest2/GCSP.Basic.cls` | `https://mi-iris.ejemplo.com/csp/mltest2/GCSP.Basic.cls` |
 | UI Agenda | `http://localhost:52773/csp/mltest2/GCSP.Agenda.cls` | `https://mi-iris.ejemplo.com/csp/mltest2/GCSP.Agenda.cls` |
-| Chat app | `http://localhost:52773/csp/mlchat/` | `https://chat.mi-iris.ejemplo.com/csp/mlchat/` |
+| Chat app | `http://localhost:52773/csp/mlchat/` | `https://mi-iris.ejemplo.com/csp/mlchat/` (mismo tunnel, mismo puerto) |
 
 ---
 
